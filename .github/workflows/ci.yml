@@ -1,0 +1,21 @@
+name: Core and installer checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core and installer tests
+        run: sh scripts/check.sh
+      - name: Memory checks
+        run: |
+          cmake -S . -B build-sanitize -DBUILD_PLUGIN=OFF -DSANITIZE=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build-sanitize --parallel 4
+          ctest --test-dir build-sanitize --output-on-failure

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.25 - 2026-10-09
+
+- Make persistence tests verify original text across autosave record boundaries. Explicitly save mid-message to exercise the case that failed on macOS CI. Decoder behavior is unchanged from 1.0.24.
+
 ## 1.0.24 - 2026-10-09
 
 - Begin checking speed agreement earlier, keeping the eight-mark minimum and dot/dash/gap validation. A clean short CQ no longer waits for a later transmission before showing text.

@@ -66,6 +66,8 @@ Both original and recovery timing paths are tested at 5, 8, 12 and 18 WPM after 
 
 ## Local 1.0.24 check, 2026-10-09
 
+Release preparation follow-up: macOS CI exposed a test assumption that a received phrase always fits in one autosave record. An explicit mid-message save reproduced the failure locally. Version 1.0.25 checks the original records joined in order, excluding recovery records, and keeps the same decoder behavior. Local core, recovery, installer and ASan/UBSan checks passed with the forced split.
+
 A short clean CQ followed by silence reproduced missing output in 1.0.23. Starting candidate agreement earlier fixes this regression at 5, 8, 12, 18, 25 and 40 WPM in both timing paths while retaining the startup-pulse rejection tests. Core/recovery, three installer tests, ASan/UBSan and the real-ImGui test passed. The ImGui test also checks that reopening an off-screen window after resizing to 640 x 480 places it within view, focuses it and raises it above another panel.
 
 The installed binary matched the Release build (SHA-256 `2ebb9fdea25144c320a2a27e3962901deb758278389800a23bc9c433a9a2b0d5`). Brown loaded version 1.0.24; disabling and re-enabling the plugin visibly restored its centered window. Reception resumed at the pre-update 14.031070 MHz with live text and no reported drops or errors. This verifies operation, not the accuracy of every received character. A separate 20-second fading recording produced no text in either 1.0.23 or 1.0.24; the startup improvement is demonstrated by the controlled short-CQ regression, not that recording.

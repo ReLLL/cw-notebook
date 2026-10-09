@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <unistd.h>
@@ -90,6 +91,15 @@ template<class Predicate> cw::Snapshot waitFor(cw::Engine& engine,Predicate done
     auto s=engine.snapshot();
     throw std::runtime_error("Engine operation timed out: text="+s.text+" error="+s.error+" path="+s.path+" drops="+std::to_string(s.dropped));
 }
+std::string savedOriginal(const std::string& content){
+    // These short fixtures fit on each record line. Autosave may split a
+    // phrase at any character; recovery records must never satisfy this check.
+    std::istringstream lines(content);std::string line,result;
+    const std::string prefix="Original decode: ";
+    while(std::getline(lines,line))if(line.compare(0,prefix.size(),prefix)==0)
+        result+=line.substr(prefix.size());
+    return result;
+}
 void testEngine(){
     auto dir=std::filesystem::temp_directory_path()/("cw-engine-test-"+std::to_string(getpid()));
     std::filesystem::create_directories(dir);
@@ -97,8 +107,12 @@ void testEngine(){
     {
         cw::Engine engine(dir);
         auto samples=audio("VVV VVV DE 4XZ TEST 123",20,8000,800,.005);
+        bool splitSaved=false;
         for(size_t i=0;i<samples.size();i+=200){
             engine.audio(std::vector<float>(samples.begin()+i,samples.begin()+std::min(i+200,samples.size())),8000,6606960);
+            if(!splitSaved && engine.snapshot().text.find("DE 4XZ")!=std::string::npos){
+                engine.command("save");splitSaved=true;
+            }
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         auto s=waitFor(engine,[](const auto& x){return x.text.find("DE 4XZ TEST 123")!=std::string::npos;});
@@ -116,7 +130,8 @@ void testEngine(){
         engine.command("save");waitFor(engine,[](const auto& x){return x.error.empty();});
         engine.command("clear_view");waitFor(engine,[](const auto& x){return x.text.empty() && x.transcriptReset==1;});
         std::ifstream in(log);std::string content((std::istreambuf_iterator<char>(in)),{});
-        require(content.find("DE 4XZ TEST 123")!=std::string::npos,"Markdown spacing and clear-view persistence");
+        require(splitSaved,"Mid-message save was not exercised");
+        require(savedOriginal(content).find("DE 4XZ TEST 123")!=std::string::npos,"Markdown spacing and clear-view persistence");
         for(size_t i=0;i<samples.size();i+=200){
             engine.audio(std::vector<float>(samples.begin()+i,samples.begin()+std::min(i+200,samples.size())),8000,6606960);
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -135,7 +150,7 @@ void testEngine(){
         for(const auto& file:std::filesystem::directory_iterator(dir)){
             if(file.path().filename().string().find(".cleared-")==std::string::npos)continue;
             std::ifstream backup(file.path());std::string text((std::istreambuf_iterator<char>(backup)),{});
-            archived=text.find("DE 4XZ TEST 123")!=std::string::npos;
+            archived=savedOriginal(text).find("DE 4XZ TEST 123")!=std::string::npos;
         }
         require(archived,"Clear log archives decoded text");
         engine.command("wpm","25");waitFor(engine,[](const auto& x){return x.manualWpm==25;});

@@ -3,6 +3,7 @@
 #pragma once
 #include "engine.h"
 #include "transcript_view.h"
+#include "stream_watchdog.h"
 #include <module.h>
 #include <gui/gui.h>
 #include <dsp/sink/handler_sink.h>
@@ -30,6 +31,11 @@ private:
     std::string name_,streamName_="Radio";
     cw::Engine engine_;
     TranscriptView transcript_;
+    cw::StreamWatchdog watchdog_;
+    std::atomic<uint64_t> inputBlocks_{0};
+    uint64_t reconnects_=0;
+    bool showRecovery_=false;
+    double lastFrequency_=0,lastCenter_=0,lastRate_=0;
     dsp::sink::Handler<dsp::complex_t> sink_;
     dsp::channel::RxVFO* audioStream_=nullptr;
     EventHandler<std::string> registered_,unregistering_;
@@ -41,6 +47,7 @@ private:
     std::atomic<bool> accept_{false};
     double mixerPhase_=0,channelOffset_=0;
     bool enabled_=true,window_=true,follow_=true,manualSpeed_=false,manualPitch_=false;
+    bool presentWindow_=true;
     bool supportedMode_=false,playing_=false;
     bool renaming_=false;
     bool ownsMouseGesture_=false;

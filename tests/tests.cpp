@@ -31,7 +31,7 @@ void testTiming(){
     }
 }
 void testAudio(){
-    for(auto wpm:{3,5,12,20,40,80,120,200}){
+    for(auto wpm:{3,5,8,12,18,20,40,80,120,200}){
         auto samples=audio("VVV VVV DE 4XZ TEST 123",wpm,48000,800,.015,true);
         cw::Decoder d;std::string out;d.output=[&](const std::string&s){out+=s;};
         for(size_t i=0;i<samples.size();i+=977)d.process(samples.data()+i,std::min(size_t(977),samples.size()-i),48000);
@@ -102,6 +102,12 @@ void testEngine(){
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         auto s=waitFor(engine,[](const auto& x){return x.text.find("DE 4XZ TEST 123")!=std::string::npos;});
+        require(s.recoveredText.find("DE 4XZ TEST 123")!=std::string::npos,"Recovery stream absent");
+        require(s.timingRecovery,"Recovery defaults");
+        const auto original=s.text;
+        engine.command("timing_recovery","0");
+        s=waitFor(engine,[](const auto& x){return !x.timingRecovery;});
+        require(s.text==original,"Recovery switch rewrote original");
         require(s.dropped==0,"Unexpected drop");
         engine.command("save");s=waitFor(engine,[](const auto& x){return x.saved>15 && !x.path.empty();});
         engine.command("rename","Engine log");s=waitFor(engine,[](const auto& x){return x.path.find("Engine log.md")!=std::string::npos;});
@@ -124,7 +130,7 @@ void testEngine(){
         s=engine.snapshot();require(s.text==retained && s.transcriptReset==1,"Failed clear preserves transcript");
         std::filesystem::rename(dir/"retained.md",log);
         engine.command("clear_log");s=waitFor(engine,[](const auto& x){return x.transcriptReset==2;});
-        require(s.text.empty() && s.error.empty(),"Clear log clears decoded transcript after successful archive");
+        require(s.text.empty() && s.recoveredText.empty() && s.error.empty(),"Clear log clears both transcripts after successful archive");
         bool archived=false;
         for(const auto& file:std::filesystem::directory_iterator(dir)){
             if(file.path().filename().string().find(".cleared-")==std::string::npos)continue;
@@ -134,7 +140,7 @@ void testEngine(){
         require(archived,"Clear log archives decoded text");
         engine.command("wpm","25");waitFor(engine,[](const auto& x){return x.manualWpm==25;});
     }
-    {cw::Engine recovered(dir);auto s=waitFor(recovered,[](const auto& x){return !x.path.empty();});require(s.path==log,"Restart recovers renamed log");require(s.manualWpm==25,"Restart restores decoder preference");}
+    {cw::Engine recovered(dir);auto s=waitFor(recovered,[](const auto& x){return !x.path.empty();});require(s.path==log,"Restart recovers renamed log");require(s.manualWpm==25,"Restart restores decoder preference");require(!s.timingRecovery,"Restart restores recovery choices");}
     std::filesystem::remove_all(dir);
 }
 void testIdleSpacing(){
@@ -163,6 +169,36 @@ void testIdleSpacing(){
         require(resumed.text.size()>text.size(),"Decoding resumes after silence");
         require(resumed.text.find("\n\n\n")==std::string::npos,"No accumulated empty paragraphs");
         require(resumed.dropped==0,"Idle test processed all audio");
+        // Station changes must resume reception, add exactly one line break,
+        // and preserve the entire preceding decode in both views.
+        std::string before=resumed.text;
+        engine.command("wpm","25");engine.command("tone","800");
+        waitFor(engine,[](const auto& s){return s.manualWpm==25&&s.manualTone==800;});
+        engine.command("retune","14021960");
+        waitFor(engine,[](const auto& s){return s.frequency==14021960;});
+        require(engine.snapshot().manualWpm==0&&engine.snapshot().manualTone==0,"Retune releases old station locks");
+        require(engine.snapshot().text==before,"Silent retune inserted whitespace");
+        for(size_t i=0;i<signal.size();i+=8000)
+            feed(std::vector<float>(signal.begin()+i,signal.begin()+std::min(i+8000,signal.size())),8000,14021960);
+        auto after=engine.snapshot();
+        auto trimmed=before.substr(0,before.find_last_not_of(" \n")+1);
+        require(after.text.compare(0,trimmed.size(),trimmed)==0,"Retune lost previous decode");
+        require(after.text[trimmed.size()]=='\n'&&after.text[trimmed.size()+1]!='\n',"Retune needs one new line");
+        require(after.text.find("DE 4XZ TEST 123",trimmed.size())!=std::string::npos,"Retune stopped decoding");
+        engine.command("retune","14021961");
+        auto learning=waitFor(engine,[](const auto& s){return s.frequency==14021961;});
+        require(!learning.decoder.calibrated&&learning.decoder.wpm==0,"One-Hz retune must discard speed estimate");
+        auto slow=audio("VVV VVV CQ CQ DE TEST SLOW CW",8,8000,800,.005);
+        for(size_t i=0;i<slow.size();i+=8000)
+            feed(std::vector<float>(slow.begin()+i,slow.begin()+std::min(i+8000,slow.size())),8000,14021961);
+        auto adapted=engine.snapshot();
+        require(adapted.text.find("CQ CQ DE TEST SLOW CW",after.text.size())!=std::string::npos,"Retune did not decode slower station");
+        require(adapted.decoder.calibrated&&std::abs(adapted.decoder.wpm-8)<1,"Retune kept previous station speed");
+        engine.command("auto_retune","0");engine.command("wpm","25");engine.command("pause","1");
+        waitFor(engine,[](const auto& s){return s.paused&&s.manualWpm==25&&!s.autoRetune;});
+        engine.command("retune","7021960");
+        auto held=waitFor(engine,[](const auto& s){return s.frequency==7021960;});
+        require(held.paused&&held.manualWpm==25,"Retune must honor Pause and optional manual lock retention");
     }
     std::filesystem::remove_all(dir);
 }

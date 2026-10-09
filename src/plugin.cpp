@@ -53,7 +53,7 @@ CWNotebook::~CWNotebook(){
     detach();gui::menu.removeEntry(name_);
 }
 void CWNotebook::postInit(){if(enabled_){select(streamName_);metadata();}}
-void CWNotebook::enable(){enabled_=true;select(streamName_);metadata();}
+void CWNotebook::enable(){enabled_=true;window_=true;presentWindow_=true;select(streamName_);metadata();}
 void CWNotebook::disable(){enabled_=false;accept_=false;detach();engine_.command("save");}
 void CWNotebook::detach(){
     if(!audioStream_)return;
@@ -63,7 +63,7 @@ void CWNotebook::detach(){
 void CWNotebook::select(const std::string& name){
     detach();streamName_=name;
     auto names=sigpath::sinkManager.getStreamNames();
-    if(std::find(names.begin(),names.end(),name)==names.end())return;
+    if(std::find(names.begin(),names.end(),name)==names.end()||!sigpath::vfoManager.vfoExists(name))return;
     channelOffset_=sigpath::vfoManager.getOffset(name);
     audioStream_=sigpath::iqFrontEnd.addVFO("cw_notebook_channel",8000,500,channelOffset_);
     if(audioStream_){sink_.setInput(&audioStream_->out);sink_.start();}
@@ -76,7 +76,10 @@ void CWNotebook::metadata(){
         if(audioStream_ && std::abs(offset-channelOffset_)>.1){audioStream_->setOffset(offset);channelOffset_=offset;}
     }
     else frequency=double(gui::freqSelect.frequency);
-    frequency_=frequency;
+    double center=gui::waterfall.getCenterFrequency(),rate=sigpath::iqFrontEnd.getSampleRate();
+    bool changed=lastFrequency_!=0&&(std::abs(frequency-lastFrequency_)>.5||center!=lastCenter_||rate!=lastRate_);
+    if(changed){engine_.command("retune",std::to_string(frequency));watchdog_.grace(ImGui::GetTime());}
+    lastFrequency_=frequency;lastCenter_=center;lastRate_=rate;frequency_=frequency;
     auto it=core::moduleManager.instances.find(streamName_);
     supportedMode_=false;
     if(it!=core::moduleManager.instances.end() && it->second.instance){
@@ -84,12 +87,17 @@ void CWNotebook::metadata(){
             auto mode=j.value("demod","");supportedMode_=mode=="CW"||mode=="USB"||mode=="LSB";
         }catch(const json::exception&){}
     }
-    bool ready=enabled_ && supportedMode_ && playing_;
+    bool ready=enabled_ && supportedMode_ && playing_ && sigpath::vfoManager.vfoExists(streamName_);
     if(ready!=accept_)engine_.command("reset");
     accept_=ready;
+    if(watchdog_.check(ImGui::GetTime(),ready,engine_.snapshot().paused,inputBlocks_.load())){
+        // Reconnect only this receive channel, never the source or another module.
+        accept_=false;select(streamName_);accept_=ready;++reconnects_;
+    }
 }
 void CWNotebook::audio(dsp::complex_t* samples,int count,void* ctx){
     auto* self=static_cast<CWNotebook*>(ctx);
+    ++self->inputBlocks_;
     if(!self->accept_ || count<=0 || count>1000000)return;
     std::vector<float> mono(size_t(count),0.f);
     for(int i=0;i<count;i++){
@@ -111,13 +119,17 @@ void CWNotebook::openPath(const std::string& path,bool reveal){
 }
 std::string CWNotebook::handleDebugCommand(const std::string& cmd,const std::string& args){
     if(cmd=="status"){
-        auto s=engine_.snapshot();return json{{"text",s.text},{"path",s.path},{"error",s.error},{"notice",s.notice},{"frequency",s.frequency},
+        auto s=engine_.snapshot();return json{{"text",s.text},{"recovered_text",s.recoveredText},
+            {"timing_recovery",s.timingRecovery},{"auto_retune",s.autoRetune},{"reconnects",reconnects_},
+            {"input_blocks",inputBlocks_.load()},{"recovery_resets",s.recoveredDecoder.recoveries},
+            {"filtered_glitches",s.recoveredDecoder.filteredGlitches},{"path",s.path},{"error",s.error},{"notice",s.notice},{"frequency",s.frequency},
             {"wpm",s.decoder.wpm},{"tone",s.decoder.tone},{"calibrated",s.decoder.calibrated},{"signal",s.decoder.signal},
             {"blocks",s.blocks},{"dropped",s.dropped},{"saved",s.saved},{"paused",s.paused},{"autosave",s.autosave},
             {"level",s.decoder.level},{"threshold",s.decoder.threshold},{"contrast_db",s.decoder.snr},{"input","IQ 8k / 500Hz"},{"version",CW_VERSION_STRING},
             {"manual_wpm",s.manualWpm},{"manual_tone",s.manualTone}}.dump();
     }
-    if(cmd=="capture"||cmd=="save"||cmd=="new"||cmd=="rename"||cmd=="clear_log"||cmd=="clear_view"||cmd=="pause"||cmd=="autosave"||cmd=="reset"||cmd=="wpm"||cmd=="tone"){
+    if(cmd=="reconnect"){accept_=false;select(streamName_);watchdog_.grace(ImGui::GetTime());++reconnects_;metadata();return "{\"status\":\"reconnected\"}";}
+    if(cmd=="capture"||cmd=="save"||cmd=="new"||cmd=="rename"||cmd=="clear_log"||cmd=="clear_view"||cmd=="pause"||cmd=="autosave"||cmd=="reset"||cmd=="wpm"||cmd=="tone"||cmd=="timing_recovery"||cmd=="auto_retune"){
         engine_.command(cmd,args);return "{\"status\":\"queued\"}";
     }
     return "{\"error\":\"Unknown command\"}";

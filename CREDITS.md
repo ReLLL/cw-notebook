@@ -20,3 +20,5 @@ The release contains the plugin only, not the Brown application or its dependenc
 The [Fldigi documentation](https://www.w1hkj.org/FldigiHelp/cw_configuration_page.html) informed the receive controls and timing workflow. [Priyom](https://priyom.org/military-stations/israel/4xz) provided monitoring background for local tests. Neither project endorses CW Notebook. No Fldigi decoder source or Priyom recordings are included.
 
 See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [LICENSE](LICENSE).
+
+[ITU-R M.1677-1](https://www.itu.int/rec/R-REC-M.1677-1-200910-I/) supplies the Morse timing reference. [ARRL operating aids](https://www.arrl.org/operating-aids) informed an earlier vocabulary experiment, which was removed before this release. Timing recovery is original project code; no vocabulary substitutions or suggestions are applied. These references do not endorse the plugin.

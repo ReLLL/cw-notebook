@@ -8,13 +8,20 @@
 
 namespace cw {
 Engine::Engine(const std::filesystem::path& folder):journal_(folder),folder_(folder){
+    decoder_.recovery(false);
     decoder_.output=[this](const std::string& s){decoded(s);};
+    recoveredDecoder_.output=[this](const std::string& s){decoded(s,true);};
     thread_=std::thread([this]{work();});
 }
 Engine::~Engine(){stop_=true;cv_.notify_one();if(thread_.joinable())thread_.join();}
 void Engine::audio(std::vector<float> samples,int rate,double frequency){
+    if(rate<4000||rate>384000||!std::isfinite(frequency)||frequency<=0||samples.empty())return;
     std::lock_guard<std::mutex> lock(queueMutex_);
-    if(queuedSamples_+samples.size()>size_t(std::max(rate,4000))*2){dropped_++;generation_++;return;}
+    if(samples.size()>size_t(rate)*2){dropped_++;generation_++;return;}
+    if(!queue_.empty() && (std::abs(queue_.back().frequency-frequency)>.5||queue_.back().rate!=rate)){
+        queue_.clear();queuedSamples_=0;generation_++;
+    }
+    if(queuedSamples_+samples.size()>size_t(rate)*2){queue_.clear();queuedSamples_=0;dropped_++;generation_++;}
     queuedSamples_+=samples.size();
     queue_.push_back({std::move(samples),rate,frequency,generation_.load()});cv_.notify_one();
 }
@@ -24,38 +31,58 @@ void Engine::command(std::string name,std::string value){
     cv_.notify_one();
 }
 Snapshot Engine::snapshot(){std::lock_guard<std::mutex> lock(viewMutex_);return view_;}
-void Engine::decoded(const std::string& text){
+void Engine::resetDecoders(){
+    decoder_.reset(manualWpm_,manualTone_);
+    recoveredDecoder_.recovery(timingRecovery_);
+    recoveredDecoder_.reset(manualWpm_,manualTone_);
+}
+void Engine::stationChanged(double frequency){
+    if(frequency_>0&&std::abs(frequency-frequency_)>.5){
+        transcriptBreakPending_=recoveredBreakPending_=true;
+        if(autoRetune_){manualWpm_=manualTone_=0;preferencesDirty_=true;}
+    }
+}
+void Engine::decoded(const std::string& text,bool recovered){
+    bool& breakPending=recovered?recoveredBreakPending_:transcriptBreakPending_;
     if(text==" "){
         std::lock_guard<std::mutex> lock(viewMutex_);
-        if(transcriptBreakPending_ || view_.text.empty() || view_.text.back()==' ' || view_.text.back()=='\n')return;
+        auto& target=recovered?view_.recoveredText:view_.text;
+        if(breakPending || target.empty() || target.back()==' ' || target.back()=='\n')return;
     }
     std::string formatted=text;
     {
         std::lock_guard<std::mutex> lock(viewMutex_);
-        if(transcriptBreakPending_){
+        auto& target=recovered?view_.recoveredText:view_.text;
+        if(breakPending){
             // A reset is not received text. Separate runs only once new text arrives.
-            auto end=view_.text.find_last_not_of(" \n");
-            if(end!=std::string::npos){view_.text.resize(end+1);view_.text+="\n\n";}
-            transcriptBreakPending_=false;
+            auto end=target.find_last_not_of(" \n");
+            if(end!=std::string::npos){target.resize(end+1);target+='\n';}
+            breakPending=false;
         }
-        auto end=view_.text.find_last_not_of(" \n");
-        if(text=="<AR>" || text=="<SK>" || (text=="=" && end!=std::string::npos && view_.text[end]=='='))formatted+="\n\n";
+        auto end=target.find_last_not_of(" \n");
+        if(text=="<AR>" || text=="<SK>" || (text=="=" && end!=std::string::npos && target[end]=='='))formatted+="\n\n";
     }
-    if(pending_.empty() || pending_.back().frequency!=frequency_)pending_.push_back({"",frequency_,decoder_.stats().wpm});
-    pending_.back().text+=formatted;unsavedBytes_+=formatted.size();
+    if(pending_.empty() || pending_.back().frequency!=frequency_)pending_.push_back({"",frequency_,decoder_.stats().wpm,""});
+    auto& segment=pending_.back();
+    (recovered?segment.recovered:segment.text)+=formatted;unsavedBytes_+=formatted.size();
     // Retain unsaved data on I/O failure, with a visible bounded-memory limit.
     if(unsavedBytes_>2*1024*1024){paused_=true;std::lock_guard<std::mutex> l(viewMutex_);view_.error="Unsaved text reached 2 MB. Decoding paused; save to recover.";}
     std::lock_guard<std::mutex> lock(viewMutex_);
-    view_.text+=formatted;
-    if(view_.text.size()>100000)view_.text.erase(0,view_.text.size()-80000);
+    auto& target=recovered?view_.recoveredText:view_.text;
+    target+=formatted;
+    if(target.size()>100000)target.erase(0,target.size()-80000);
 }
 void Engine::flush(){
     if(pending_.empty())return;
     if(journal_.path().empty())journal_.create(frequency_);
     while(!pending_.empty()){
         const auto& segment=pending_.front();
-        journal_.append(segment.text,segment.frequency,segment.wpm);
-        saved_+=segment.text.size();unsavedBytes_-=segment.text.size();pending_.pop_front();
+        std::string record="Original decode: "+segment.text;
+        if(!segment.recovered.empty()&&segment.recovered!=segment.text)
+            record+="\nTiming recovery (unverified): "+segment.recovered;
+        record+='\n';
+        journal_.append(record,segment.frequency,segment.wpm);
+        saved_+=segment.text.size();unsavedBytes_-=segment.text.size()+segment.recovered.size();pending_.pop_front();
     }
     persist();
 }
@@ -68,7 +95,8 @@ void Engine::persist(){
 void Engine::preferences(){
     std::filesystem::create_directories(folder_);
     auto temp=folder_/".decoder-settings.tmp";
-    {std::ofstream out(temp);out.exceptions(std::ios::badbit|std::ios::failbit);out<<autoSave_<<' '<<manualWpm_<<' '<<manualTone_<<'\n';}
+    // Keep the retired vocabulary slot as zero for old preference compatibility.
+    {std::ofstream out(temp);out.exceptions(std::ios::badbit|std::ios::failbit);out<<autoSave_<<' '<<manualWpm_<<' '<<manualTone_<<' '<<timingRecovery_<<" 0 "<<autoRetune_<<'\n';}
     std::filesystem::rename(temp,folder_/".decoder-settings");
 }
 void Engine::apply(const Command& c){
@@ -82,30 +110,45 @@ void Engine::apply(const Command& c){
         diagnosticRemaining_=8000*20;
         std::lock_guard<std::mutex> lock(viewMutex_);view_.notice="20-second diagnostic capture: "+path.string();
     }
-    else if(c.name=="pause") {paused_=c.value=="1";decoder_.reset(manualWpm_,manualTone_);if(autoSave_)flush();}
+    else if(c.name=="pause") {paused_=c.value=="1";resetDecoders();if(autoSave_)flush();}
     else if(c.name=="autosave") {autoSave_=c.value=="1";if(autoSave_)flush();}
     else if(c.name=="save") {flush();if(journal_.path().empty())journal_.create(frequency_);persist();}
-    else if(c.name=="reset")decoder_.reset(manualWpm_,manualTone_);
-    else if(c.name=="clear_view"){std::lock_guard<std::mutex> lock(viewMutex_);view_.text.clear();++view_.transcriptReset;}
+    else if(c.name=="reset"||c.name=="retune"){
+        if(c.name=="retune"){
+            double frequency=std::stod(c.value);
+            if(!std::isfinite(frequency)||frequency<=0)throw std::runtime_error("Invalid receive frequency");
+            stationChanged(frequency);frequency_=frequency;transcriptBreakPending_=recoveredBreakPending_=true;
+        }
+        resetDecoders();
+        {std::lock_guard<std::mutex> lock(queueMutex_);queue_.clear();queuedSamples_=0;}
+        discardCurrentPacket_=true;
+    }
+    else if(c.name=="clear_view"){std::lock_guard<std::mutex> lock(viewMutex_);view_.text.clear();view_.recoveredText.clear();++view_.transcriptReset;}
     else if(c.name=="rename"){flush();if(journal_.path().empty())journal_.create(frequency_);journal_.rename(c.value);persist();}
     else if(c.name=="new"){flush();journal_.create(frequency_);persist();saved_=0;}
     else if(c.name=="clear_log"){
         flush();if(journal_.path().empty())journal_.create(frequency_);
         auto backup=journal_.clear();saved_=0;
-        decoder_.reset(manualWpm_,manualTone_);transcriptBreakPending_=false;
+        resetDecoders();transcriptBreakPending_=recoveredBreakPending_=false;
         {std::lock_guard<std::mutex> lock(queueMutex_);queue_.clear();queuedSamples_=0;}
         discardCurrentPacket_=true;
         std::lock_guard<std::mutex> lock(viewMutex_);
-        view_.text.clear();++view_.transcriptReset;
+        view_.text.clear();view_.recoveredText.clear();++view_.transcriptReset;
         view_.notice="Log and decoded text cleared. Previous log archived as "+backup.filename().string();
     }
     else if(c.name=="wpm" || c.name=="tone"){
         float v=std::stof(c.value);
         if(!std::isfinite(v) || (v!=0 && (c.name=="wpm"?(v<3||v>200):(v<200||v>1800))))throw std::runtime_error("Setting outside supported range");
         if(c.name=="wpm")manualWpm_=v;else manualTone_=v;
-        decoder_.reset(manualWpm_,manualTone_);
+        resetDecoders();
     }
-    if(c.name=="autosave"||c.name=="wpm"||c.name=="tone")preferences();
+    else if(c.name=="timing_recovery"||c.name=="auto_retune"){
+        if(c.name=="timing_recovery"){
+            timingRecovery_=c.value=="1";recoveredDecoder_.recovery(timingRecovery_);recoveredDecoder_.reset(manualWpm_,manualTone_);recoveredBreakPending_=true;
+        }
+        else autoRetune_=c.value=="1";
+    }
+    if(c.name=="autosave"||c.name=="wpm"||c.name=="tone"||c.name=="timing_recovery"||c.name=="auto_retune")preferences();
     {std::lock_guard<std::mutex> lock(viewMutex_);view_.error.clear();}
 }
 void Engine::work(){
@@ -114,7 +157,10 @@ void Engine::work(){
         std::ifstream prefs(folder_/".decoder-settings");float wpm=0,tone=0;bool save=true;
         if(prefs>>save>>wpm>>tone && std::isfinite(wpm)&&std::isfinite(tone) &&
            (wpm==0||(wpm>=3&&wpm<=200)) && (tone==0||(tone>=200&&tone<=1800))){
-            manualWpm_=wpm;manualTone_=tone;autoSave_=save;decoder_.reset(wpm,tone);
+            manualWpm_=wpm;manualTone_=tone;autoSave_=save;
+            bool recovery=true,retired=false;if(prefs>>recovery>>retired)timingRecovery_=recovery;
+            bool retune=true;if(prefs>>retune)autoRetune_=retune;
+            resetDecoders();
         }
         std::ifstream in(folder_/".last-log");std::string name;
         if(std::getline(in,name) && !name.empty())journal_.resume(name);
@@ -130,26 +176,35 @@ void Engine::work(){
             if(discardCurrentPacket_){p.samples.clear();discardCurrentPacket_=false;}
             if(!p.samples.empty()){
                 if(diagnosticRemaining_){
-                    auto n=std::min(diagnosticRemaining_,p.samples.size());
-                    diagnostic_.write(reinterpret_cast<const char*>(p.samples.data()),n*sizeof(float));diagnosticRemaining_-=n;
-                    if(!diagnosticRemaining_)diagnostic_.close();
+                    try{
+                        auto n=std::min(diagnosticRemaining_,p.samples.size());
+                        diagnostic_.write(reinterpret_cast<const char*>(p.samples.data()),n*sizeof(float));diagnosticRemaining_-=n;
+                        if(!diagnosticRemaining_)diagnostic_.close();
+                    }catch(const std::exception& e){
+                        diagnosticRemaining_=0;diagnostic_.exceptions(std::ios::goodbit);diagnostic_.close();
+                        std::lock_guard<std::mutex> lock(viewMutex_);view_.error=std::string("Signal capture stopped: ")+e.what();
+                    }
                 }
-                if(p.rate!=rate_ || std::abs(p.frequency-frequency_)>5 || p.generation!=lastGeneration_){
-                    if(frequency_!=0)transcriptBreakPending_=true;
-                    decoder_.reset(manualWpm_,manualTone_);frequency_=p.frequency;rate_=p.rate;lastGeneration_=p.generation;
+                if(p.rate!=rate_ || std::abs(p.frequency-frequency_)>.5 || p.generation!=lastGeneration_){
+                    if(frequency_!=0)transcriptBreakPending_=recoveredBreakPending_=true;
+                    stationChanged(p.frequency);
+                    resetDecoders();frequency_=p.frequency;rate_=p.rate;lastGeneration_=p.generation;
                 }
-                if(!paused_)decoder_.process(p.samples.data(),p.samples.size(),p.rate);
+                if(!paused_){decoder_.process(p.samples.data(),p.samples.size(),p.rate);recoveredDecoder_.process(p.samples.data(),p.samples.size(),p.rate);}
                 blocks_++;
             }
             auto now=std::chrono::steady_clock::now();
             if(now-lastFlush>std::chrono::seconds(1)){
-                if(autoSave_)flush();lastFlush=now;
+                lastFlush=now;
+                if(preferencesDirty_){preferences();preferencesDirty_=false;}
+                if(autoSave_)flush();
             }
         }catch(const std::exception& e){std::lock_guard<std::mutex> lock(viewMutex_);view_.error=e.what();}
         {std::lock_guard<std::mutex> lock(viewMutex_);view_.decoder=decoder_.stats();view_.frequency=frequency_;view_.blocks=blocks_;view_.dropped=dropped_;
             view_.path=journal_.path().string();view_.saved=saved_;view_.paused=paused_;view_.autosave=autoSave_;
             view_.manualWpm=manualWpm_;view_.manualTone=manualTone_;}
+        {std::lock_guard<std::mutex> lock(viewMutex_);view_.recoveredDecoder=recoveredDecoder_.stats();view_.timingRecovery=timingRecovery_;view_.autoRetune=autoRetune_;}
     }
-    try{flush();}catch(...){ /* Previous successfully synced rows remain recoverable. */ }
+    try{if(preferencesDirty_)preferences();flush();}catch(...){ /* Previous successfully synced rows remain recoverable. */ }
 }
 }

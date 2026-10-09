@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ReLLL and contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
+#include <cstdint>
 #include <array>
 #include <complex>
 #include <deque>
@@ -10,14 +11,17 @@
 
 namespace cw {
 struct DecoderStats {
-    float tone = 800, wpm = 20, snr = 0, level = 0, threshold = 0;
+    float tone = 800, wpm = 0, snr = 0, level = 0, threshold = 0;
     bool keyed = false, calibrated = false, signal = false;
+    uint64_t filteredGlitches = 0, recoveries = 0;
 };
 class Timing {
 public:
     std::function<void(const std::string&)> output;
     void reset(float manualWpm = 0);
     void tick(bool key, double seconds = .001);
+    void recovery(bool enabled) { recovery_=enabled; }
+    uint64_t glitches() const { return glitches_; }
     float wpm() const { return float(1.2 / unit_); }
     bool calibrated() const { return ready_; }
 private:
@@ -25,11 +29,17 @@ private:
     void estimate();
     void consume(const Run& run);
     void letter();
+    void advance(bool key,double seconds);
     bool key_ = false, started_ = false, ready_ = false, letterSent_ = false, wordSent_ = false;
     double duration_ = 0, unit_ = .06, cutoff_ = .12, manual_ = 0;
     std::deque<double> marks_, gaps_;
     std::vector<Run> pending_;
     std::string symbol_;
+    bool recovery_=true, filteredKey_=false;
+    double transition_=0, gapCutoff_=2;
+    uint64_t glitches_=0;
+    double acquisitionUnit_=0;
+    int acquisitionHits_=0;
 };
 class Decoder {
 public:
@@ -37,6 +47,7 @@ public:
     std::function<void(bool,float,float)> trace;
     Decoder();
     void reset(float manualWpm = 0, float manualTone = 0);
+    void recovery(bool enabled) { recovery_=enabled;timing_.recovery(enabled); }
     void process(const float* mono, size_t count, int sampleRate);
     DecoderStats stats() const { return stats_; }
 private:
@@ -56,6 +67,9 @@ private:
     float candidateTone_ = 0;
     int stableTones_ = 0;
     size_t lastToneTick_ = 0;
+    bool recovery_=true, quietReset_=false;
+    float manualWpm_=0;
+    size_t quietTicks_=0;
 };
 std::string morse(const std::string& symbol);
 }

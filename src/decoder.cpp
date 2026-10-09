@@ -39,9 +39,25 @@ void Timing::reset(float manualWpm) {
     cutoff_ = 2 * unit_;
     marks_.clear(); gaps_.clear(); pending_.clear(); symbol_.clear();
     ready_ = manualWpm > 0;
+    filteredKey_=false;transition_=0;glitches_=0;gapCutoff_=2;
+    acquisitionUnit_=0;acquisitionHits_=0;
 }
 void Timing::estimate() {
-    if (manual_ > 0 || marks_.size() < 4) return;
+    if(recovery_ && ready_ && gaps_.size()>=12){
+        std::vector<double> inner,letters;
+        double low=unit_*4.5,high=0;
+        for(double gap:gaps_)if(gap>unit_*.55 && gap<unit_*4.5){low=std::min(low,gap);high=std::max(high,gap);}
+        for(int pass=0;pass<6;pass++){
+            inner.clear();letters.clear();
+            for(double gap:gaps_)if(gap>unit_*.55 && gap<unit_*4.5)
+                (gap<(low+high)/2?inner:letters).push_back(gap);
+            if(inner.size()<4 || letters.size()<4)break;
+            low=median(inner);high=median(letters);
+        }
+        if(inner.size()>=4 && letters.size()>=4 && high/low>1.4 && high/low<4)
+            gapCutoff_=std::clamp((low+high)/(2*unit_),1.25,2.6);
+    }
+    if (manual_ > 0 || marks_.size() < (ready_?4:6)) return;
     std::vector<double> v(marks_.begin(), marks_.end());
     std::sort(v.begin(), v.end());
     double a=v[v.size()/5], b=v[v.size()*4/5];
@@ -52,17 +68,28 @@ void Timing::estimate() {
         a=median(lo); b=median(hi);
     }
     if (b/a > 1.8 && b/a < 5.5 && a>=.004 && b<=1.3) {
-        unit_=std::clamp((a+b/3)/2,.006,.4);
+        double candidate=std::clamp((a+b/3)/2,.006,.4);
+        if(!ready_){
+            // Do not infer speed from isolated elements or a single outlier.
+            // Require dots, dashes and compatible within-letter gaps, then
+            // agreeing estimates before replaying buffered startup runs.
+            size_t dots=0,dashes=0,inner=0;
+            for(double mark:marks_){
+                if(mark>=candidate*.55&&mark<=candidate*1.55)++dots;
+                if(mark>=candidate*2.2&&mark<=candidate*3.8)++dashes;
+            }
+            for(double gap:gaps_)if(gap>=candidate*.55&&gap<=candidate*1.6)++inner;
+            if(dots<2||dashes<2||inner<3||dots+dashes<marks_.size()*.75){acquisitionHits_=0;return;}
+            acquisitionHits_=acquisitionUnit_>0&&std::abs(candidate-acquisitionUnit_)<candidate*.12?acquisitionHits_+1:1;
+            acquisitionUnit_=candidate;
+            // Gather candidate agreement before the eighth mark so a complete
+            // short CQ can unlock replay without needing another transmission.
+            if(marks_.size()<8||dots<3||dashes<3||acquisitionHits_<3)return;
+        }
+        unit_=candidate;
         cutoff_=(a+b)/2;
         ready_=true;
-    } else if (!ready_ && gaps_.size()>=6) {
-        std::vector<double> g(gaps_.begin(),gaps_.end());
-        std::sort(g.begin(),g.end());
-        double u=g[g.size()/5];
-        if(u>=.006 && u<=.4 && (a/u<1.5 || (a/u>2.2 && a/u<3.8))) {
-            unit_=u; cutoff_=2*u; ready_=true;
-        }
-    }
+    } else if(!ready_)acquisitionHits_=0;
 }
 void Timing::letter() {
     if (!symbol_.empty() && output) output(morse(symbol_));
@@ -78,7 +105,7 @@ void Timing::consume(const Run& r) {
         symbol_ += r.seconds < cutoff_ ? '.' : '-';
         letterSent_=wordSent_=false;
     } else {
-        if (r.seconds>unit_*2 && !letterSent_) letter();
+        if (r.seconds>unit_*gapCutoff_ && !letterSent_) letter();
         if (r.seconds>unit_*5 && !wordSent_) {
             if (output) output(" ");
             wordSent_=true;
@@ -86,6 +113,18 @@ void Timing::consume(const Run& r) {
     }
 }
 void Timing::tick(bool key, double seconds) {
+    if(!std::isfinite(seconds)||seconds<=0||seconds>.1)return;
+    if(!recovery_){advance(key,seconds);return;}
+    // Symmetric debounce delays both edges equally. Short key dropouts and
+    // impulses disappear without inserting or guessing Morse elements.
+    if(key!=filteredKey_){
+        transition_+=seconds;
+        double debounce=ready_?std::clamp(unit_*.12,.001,.012):.002;
+        if(transition_>=debounce){filteredKey_=key;transition_=0;}
+    }else if(transition_>0){++glitches_;transition_=0;}
+    advance(filteredKey_,seconds);
+}
+void Timing::advance(bool key,double seconds) {
     if (!started_) { if(!key)return; started_=true; key_=key; }
     if (key != key_) {
         Run r{key_,duration_};
@@ -99,7 +138,16 @@ void Timing::tick(bool key, double seconds) {
         if (!wasReady) {
             pending_.push_back(r);
             if(pending_.size()>512) pending_.erase(pending_.begin(),pending_.begin()+256);
-            if(ready_) { for(const auto& p:pending_)consume(p); pending_.clear(); }
+            if(ready_) {
+                // Startup interference outside the learned mark range is not
+                // part of the first letter. Begin at a plausible keyed mark.
+                bool begin=false;
+                for(const auto& p:pending_){
+                    if(!begin && p.key && p.seconds>=unit_*.55 && p.seconds<=unit_*3.8)begin=true;
+                    if(begin)consume(p);
+                }
+                pending_.clear();
+            }
         } else consume(r);
         key_=key; duration_=0;
     }
@@ -108,8 +156,12 @@ void Timing::tick(bool key, double seconds) {
 }
 Decoder::Decoder() { reset(); }
 void Decoder::reset(float wpm, float tone) {
+    manualWpm_=wpm;quietTicks_=0;quietReset_=false;
     timing_.reset(wpm);
-    timing_.output=[this](const std::string& s){if(output)output(s);};
+    timing_.output=[this](const std::string& s){
+        stats_.calibrated=timing_.calibrated();stats_.wpm=stats_.calibrated?timing_.wpm():0;
+        if(output)output(s);
+    };
     stats_={}; if(wpm>0)stats_.wpm=wpm; manualTone_=tone; if(tone>0)stats_.tone=tone;
     audio_.fill(0); levels_.fill(0);
     audioPos_=levelPos_=samples_=ticks_=0;
@@ -195,8 +247,17 @@ void Decoder::envelope(float x) {
     if(candidate!=key_) {if(++debounce_>=debounceTicks){key_=candidate;debounce_=0;}} else debounce_=0;
     // Delay acquisition until the first tone estimate, avoiding startup filter clicks.
     if(ticks_>=300)timing_.tick(key_);
+    if(recovery_){
+        if(key_){quietTicks_=0;quietReset_=false;}
+        else if(++quietTicks_>12000 && !quietReset_){
+            // No guessed text at loss of signal; retain manual locks, clear
+            // learned timing so the next operator can have a different speed.
+            timing_.reset(manualWpm_);quietReset_=true;++stats_.recoveries;
+        }
+    }
     stats_.level=x;stats_.threshold=threshold;stats_.keyed=key_;
-    stats_.wpm=timing_.wpm();stats_.calibrated=timing_.calibrated();
+    stats_.wpm=timing_.calibrated()?timing_.wpm():0;stats_.calibrated=timing_.calibrated();
+    stats_.filteredGlitches=timing_.glitches();
     if(trace)trace(key_,x,threshold);
 }
 }

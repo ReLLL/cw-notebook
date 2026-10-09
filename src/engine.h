@@ -13,7 +13,9 @@
 namespace cw {
 struct Snapshot {
     DecoderStats decoder;
-    std::string text, path, error, notice;
+    std::string text, recoveredText, path, error, notice;
+    DecoderStats recoveredDecoder;
+    bool timingRecovery=true, autoRetune=true;
     double frequency=0;
     uint64_t blocks=0, dropped=0, saved=0, transcriptReset=0;
     bool paused=false, autosave=true;
@@ -31,7 +33,9 @@ private:
     struct Command {std::string name,value;};
     void work();
     void apply(const Command& cmd);
-    void decoded(const std::string& text);
+    void decoded(const std::string& text,bool recovered=false);
+    void resetDecoders();
+    void stationChanged(double frequency);
     void flush();
     void persist();
     void preferences();
@@ -43,15 +47,17 @@ private:
     std::atomic<uint64_t> dropped_{0}, generation_{0};
     std::atomic<bool> stop_{false};
     std::thread thread_;
-    Decoder decoder_;
+    Decoder decoder_, recoveredDecoder_;
     Journal journal_;
     Snapshot view_;
     std::filesystem::path folder_;
-    struct Segment {std::string text;double frequency;float wpm;};
+    struct Segment {std::string text;double frequency;float wpm;std::string recovered;};
     std::deque<Segment> pending_;
     size_t unsavedBytes_=0;
     bool paused_=false,autoSave_=true,transcriptBreakPending_=false;
     bool discardCurrentPacket_=false;
+    bool preferencesDirty_=false;
+    bool timingRecovery_=true,autoRetune_=true,recoveredBreakPending_=false;
     float manualWpm_=0,manualTone_=0;
     double frequency_=0;
     int rate_=0;

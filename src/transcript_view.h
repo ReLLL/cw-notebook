@@ -5,13 +5,13 @@
 #include <string>
 #include <vector>
 
-// GUI-thread-only view. Holding a selection never pauses decoding or logging.
+// GUI-thread-only view. Selection and scrolling never pause incoming text.
 class TranscriptView {
 public:
     void draw(const std::string& text, float height, float scale, bool& follow);
     void clear();
     void copyAll(const std::string& text);
-    void copyReport(double frequency, float wpm, float carrierOffset, bool manualSpeed);
+    void copyReport(double frequency, float wpm, float carrierOffset, bool manualSpeed,bool recovered=false);
     bool popupOpen() const { return popupOpen_; }
 private:
     static int selectionCallback(ImGuiInputTextCallbackData* data);
@@ -20,6 +20,7 @@ private:
     std::vector<char> buffer_{'\0'};
     float width_=0,fontSize_=0;
     bool wasFollowing_=true;
+    bool resetSelection_=false;
     bool popupOpen_=false;
     std::string copyNotice_;
     double copiedAt_=-10;

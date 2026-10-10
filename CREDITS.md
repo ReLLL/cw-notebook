@@ -11,7 +11,7 @@ CW Notebook is maintained by [ReLLL](https://github.com/ReLLL). Its CW detector,
 - **[Dear ImGui](https://github.com/ocornut/imgui)**  -  ocornut and contributors. Immediate-mode interface, multiline selection and context menus, provided by the host. MIT.
 - **[JSON for Modern C++](https://github.com/nlohmann/json)**  -  nlohmann and contributors. Brown's bundled JSON header is used for module commands/status and configuration interfaces. MIT.
 - **[stb_textedit](https://github.com/nothings/stb)**  -  nothings and contributors. Text-editing structures included by the host's Dear ImGui headers. Dual MIT/public-domain license; MIT notice retained.
-- **[VOLK](https://www.libvolk.org/)** and **[FFTW](https://www.fftw.org/)**  -  their respective authors and contributors. DSP dependencies of Brown whose development headers are needed when compiling against Brown's interfaces. The plugin does not ship separate copies of their libraries.
+- **[VOLK](https://www.libvolk.org/)** and **[FFTW](https://www.fftw.org/)**  -  their respective authors and contributors. DSP dependencies of Brown whose development headers are needed when compiling against Brown's interfaces. CW Notebook links to Brown's bundled VOLK for channel filtering. The plugin does not ship separate copies of these libraries.
 
 The release contains the plugin only, not the Brown application or its dependency libraries. Compiled inline/template portions may come from host/dependency headers. Preserve the host and dependency license notices when distributing combined builds.
 

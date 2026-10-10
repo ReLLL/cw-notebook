@@ -28,6 +28,7 @@ private:
     static void audio(dsp::complex_t* samples,int count,void* ctx);
     void openPath(const std::string& path,bool reveal);
     void logControls(const cw::Snapshot& s);
+    void decoderControls(const cw::Snapshot& s);
     std::string name_,streamName_="Radio";
     cw::Engine engine_;
     TranscriptView transcript_;
@@ -46,11 +47,14 @@ private:
     std::atomic<double> frequency_{0};
     std::atomic<bool> accept_{false};
     double mixerPhase_=0,channelOffset_=0;
+    double bandwidth_=500;
+    bool followsBandwidth_=false;
     bool enabled_=true,window_=true,follow_=true,manualSpeed_=false,manualPitch_=false;
     bool presentWindow_=true;
     bool supportedMode_=false,playing_=false;
     bool renaming_=false;
     bool ownsMouseGesture_=false;
+    bool controlsPopupOpen_=false;
     float speed_=20,pitch_=800,textSize_=1.15;
     int frame_=0;
     uint64_t lastBlocks_=0, lastTranscriptReset_=0;

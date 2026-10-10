@@ -28,10 +28,10 @@ CWNotebook::CWNotebook(std::string name):name_(std::move(name)),engine_(logFolde
         auto* window=ImGui::FindWindowByName("CW Notebook###cw_notebook_window");
         auto* active=GImGui->ActiveIdWindow;
         const bool focusedControl=active && window && active->RootWindow==window && ImGui::GetActiveID()!=0;
-        if(clicked && (inside || self->transcript_.popupOpen()))self->ownsMouseGesture_=true;
+        if(clicked && (inside || self->transcript_.popupOpen() || self->controlsPopupOpen_))self->ownsMouseGesture_=true;
         // Keep the complete gesture, even after leaving the window. A popup's
         // dismissal click and text-selection keys must not reach the waterfall.
-        if(inside || self->ownsMouseGesture_ || self->transcript_.popupOpen() || (focusedControl && !clicked)){
+        if(inside || self->ownsMouseGesture_ || self->transcript_.popupOpen() || self->controlsPopupOpen_ || (focusedControl && !clicked)){
             gui::waterfall.inputHandled=true;
             gui::mainWindow.lockWaterfallControls=true;
         }
@@ -65,7 +65,7 @@ void CWNotebook::select(const std::string& name){
     auto names=sigpath::sinkManager.getStreamNames();
     if(std::find(names.begin(),names.end(),name)==names.end()||!sigpath::vfoManager.vfoExists(name))return;
     channelOffset_=sigpath::vfoManager.getOffset(name);
-    audioStream_=sigpath::iqFrontEnd.addVFO("cw_notebook_channel",8000,500,channelOffset_);
+    audioStream_=sigpath::iqFrontEnd.addVFO("cw_notebook_channel",8000,bandwidth_,channelOffset_);
     if(audioStream_){sink_.setInput(&audioStream_->out);sink_.start();}
 }
 void CWNotebook::metadata(){
@@ -81,12 +81,22 @@ void CWNotebook::metadata(){
     if(changed){engine_.command("retune",std::to_string(frequency));watchdog_.grace(ImGui::GetTime());}
     lastFrequency_=frequency;lastCenter_=center;lastRate_=rate;frequency_=frequency;
     auto it=core::moduleManager.instances.find(streamName_);
-    supportedMode_=false;
+    supportedMode_=false;followsBandwidth_=false;
     if(it!=core::moduleManager.instances.end() && it->second.instance){
         try {auto j=json::parse(it->second.instance->handleDebugCommand("get_demod",""));
             auto mode=j.value("demod","");supportedMode_=mode=="CW"||mode=="USB"||mode=="LSB";
+            followsBandwidth_=mode=="CW";
         }catch(const json::exception&){}
     }
+    double width=500;
+    if(followsBandwidth_&&sigpath::vfoManager.vfoExists(streamName_)){
+        double selected=sigpath::vfoManager.getBandwidth(streamName_);
+        // Brown CW permits 50-500 Hz. The wider bound leaves room for compatible
+        // hosts while keeping the 800 Hz real-audio representation unaliased.
+        if(std::isfinite(selected)&&selected>=50&&selected<=1200)width=selected;
+        else followsBandwidth_=false;
+    }
+    if(audioStream_&&std::abs(width-bandwidth_)>.1){audioStream_->setBandwidth(width);bandwidth_=width;}
     bool ready=enabled_ && supportedMode_ && playing_ && sigpath::vfoManager.vfoExists(streamName_);
     if(ready!=accept_)engine_.command("reset");
     accept_=ready;
@@ -124,12 +134,16 @@ std::string CWNotebook::handleDebugCommand(const std::string& cmd,const std::str
             {"input_blocks",inputBlocks_.load()},{"recovery_resets",s.recoveredDecoder.recoveries},
             {"filtered_glitches",s.recoveredDecoder.filteredGlitches},{"path",s.path},{"error",s.error},{"notice",s.notice},{"frequency",s.frequency},
             {"wpm",s.decoder.wpm},{"tone",s.decoder.tone},{"calibrated",s.decoder.calibrated},{"signal",s.decoder.signal},
+            {"buffered_runs",s.decoder.bufferedRuns},{"recovery_buffered_runs",s.recoveredDecoder.bufferedRuns},
+            {"extended_speed",s.extendedSpeed},
+            {"provisional",s.decoder.provisional},{"provisional_wpm",s.decoder.provisionalWpm},
+            {"bandwidth_hz",bandwidth_},{"follows_radio_bandwidth",followsBandwidth_},
             {"blocks",s.blocks},{"dropped",s.dropped},{"saved",s.saved},{"paused",s.paused},{"autosave",s.autosave},
-            {"level",s.decoder.level},{"threshold",s.decoder.threshold},{"contrast_db",s.decoder.snr},{"input","IQ 8k / 500Hz"},{"version",CW_VERSION_STRING},
+            {"level",s.decoder.level},{"threshold",s.decoder.threshold},{"contrast_db",s.decoder.snr},{"input","IQ 8k"},{"version",CW_VERSION_STRING},
             {"manual_wpm",s.manualWpm},{"manual_tone",s.manualTone}}.dump();
     }
     if(cmd=="reconnect"){accept_=false;select(streamName_);watchdog_.grace(ImGui::GetTime());++reconnects_;metadata();return "{\"status\":\"reconnected\"}";}
-    if(cmd=="capture"||cmd=="save"||cmd=="new"||cmd=="rename"||cmd=="clear_log"||cmd=="clear_view"||cmd=="pause"||cmd=="autosave"||cmd=="reset"||cmd=="wpm"||cmd=="tone"||cmd=="timing_recovery"||cmd=="auto_retune"){
+    if(cmd=="capture"||cmd=="save"||cmd=="new"||cmd=="rename"||cmd=="clear_log"||cmd=="clear_view"||cmd=="pause"||cmd=="autosave"||cmd=="reset"||cmd=="wpm"||cmd=="tone"||cmd=="timing_recovery"||cmd=="auto_retune"||cmd=="extended_speed"){
         engine_.command(cmd,args);return "{\"status\":\"queued\"}";
     }
     return "{\"error\":\"Unknown command\"}";

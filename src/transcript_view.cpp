@@ -17,7 +17,8 @@ void TranscriptView::copied(const std::string& text,const char* kind){
     copiedAt_=ImGui::GetTime();
 }
 void TranscriptView::copyAll(const std::string& text){copied(text,"all text");}
-void TranscriptView::copyReport(double frequency,float wpm,float carrierOffset,bool manualSpeed,bool recovered){
+void TranscriptView::copyReport(double frequency,float wpm,float carrierOffset,bool manualSpeed,bool recovered,const std::string* currentText){
+    const auto& text=currentText?*currentText:source_;
     const auto now=std::time(nullptr);
     std::tm local{};
     localtime_r(&now,&local);
@@ -34,8 +35,8 @@ void TranscriptView::copyReport(double frequency,float wpm,float carrierOffset,b
           <<"Frequency:      "<<std::fixed<<std::setprecision(3)<<frequency/1000<<" kHz\n"
           <<"Speed:          "<<std::setprecision(1)<<wpm<<" WPM ("<<(manualSpeed?"manual":"estimated")<<")\n"
           <<"Carrier offset: "<<std::showpos<<std::setprecision(0)<<carrierOffset<<std::noshowpos<<" Hz\n\n"
-          <<(recovered?"Timing recovery (unverified)":"Original decode")<<"\n-------------\n"<<source_;
-    if(source_.empty() || source_.back()!='\n')report<<'\n';
+          <<(recovered?"Timing + fade recovery (unverified)":"Original decode")<<"\n-------------\n"<<text;
+    if(text.empty() || text.back()!='\n')report<<'\n';
     copied(report.str(),"reception details and displayed text");
 }
 void TranscriptView::update(const std::string& text,float width){

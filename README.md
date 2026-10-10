@@ -2,11 +2,15 @@
 
 Decode one CW/Morse signal into a selectable transcript and recoverable Markdown log. Maintained by [ReLLL](https://github.com/ReLLL). Free and open source under GPL-3.0-or-later.
 
-If the transcript is hidden or outside the visible area, reopen it from the sidebar or disable and re-enable CW Notebook. The window returns centered and in front. Use **Bring transcript to front** to do this without interrupting reception.
+If the transcript is hidden or outside the visible area, use **Bring CW Notebook to front** in the sidebar. The window returns centered and in front without interrupting reception. Disabling and re-enabling also reopens it.
 
 ## Features
 
-- Automatic tone and timing acquisition, with manual speed and carrier-offset controls.
+- Automatic timing defaults to 5-45 WPM, with an optional 3-200 WPM range and manual speed/carrier controls.
+- Key and gap durations are held during learning and replayed when timing becomes usable. Long buffers spill to a temporary file instead of dropping their beginning.
+- Speed learning uses the latest 16 marks and recent gaps. Poor evidence leaves timing unchanged; sustained, strongly supported new timing can correct a mistaken automatic speed lock. Manual speed stays fixed.
+- Provisional letters appear after two seconds of detected keying and update as timing improves. The labeled draft is replaced by confirmed replay; only confirmed text is autosaved.
+- CW reception follows Radio's filter width. Transcript, Decoder and How to use tabs keep the main view compact.
 - Readable, resizable text; selection, Cmd+C, and right-click Copy selection / Copy all.
 - **Copy to clipboard** exports the displayed transcript with local SQL-style date/time, weekday, UTC offset, current frequency, speed, and carrier offset.
 - Markdown autosave, rename, new log, Finder reveal, and one-click clear with a dated backup.
@@ -60,21 +64,21 @@ To uninstall, disable/remove the **CW Notebook** instance in Module Manager. Wit
 
 ## Receiving Morse
 
-1. Choose **CW** and center a keyed carrier within approximately ±250 Hz of the tuned frequency. The plugin has a private 500 Hz channel. Speaker mute does not stop decoding.
-2. Tune another station or band normally. Acquisition restarts automatically; the next decoded text starts on one new line. Earlier text remains. Manual speed/tone locks are released by default; disable **Relearn speed / tone after retuning** to retain them. An intentional Pause remains paused.
-3. After every frequency change, speed learning starts from zero, including 1 Hz adjustments. The display shows **Speed -- (learning)** until several dots, dashes and compatible gaps establish timing. Early key durations are buffered instead of immediately becoming E/T letters. This takes longer in seconds for slow CW. If fading makes automatic speed jump, set an approximate WPM under **Decoder settings**. **Relearn** keeps manual settings.
-4. **Follow text** starts enabled and controls automatic scrolling only. Clicking the box never freezes new text. Selecting or scrolling back holds the scroll position while new text keeps arriving; enable Follow text to jump to the latest.
+1. Choose **CW** and put one keyed carrier inside Radio's filter. CW Notebook follows its width; narrow it to exclude nearby stations. USB/LSB retain a centered 500 Hz CW channel. Speaker mute does not stop decoding.
+2. Tune another station or band normally. Acquisition restarts automatically; the next decoded text starts on one new line. Earlier text remains. Manual speed/tone locks are released by default; disable **Release manual locks when tuning a new station** in Decoder to retain them. An intentional Pause remains paused.
+3. Learning starts from zero after retuning. Key/gap durations stay buffered until mixed dot/dash evidence and a character gap establish timing. A clean D can unlock at its first character gap. Ambiguous sequences show a labeled provisional decode after about two seconds; confirmed output waits for stronger evidence. Silence retains the buffer. Manual WPM in **Decoder** can decode held intervals. **Relearn**, retuning, tone changes and stream resets discard uncommitted intervals; confirmed text remains.
+4. **Follow** controls automatic scrolling only. Clicking never freezes new text. Selecting or scrolling back holds the scroll position while text keeps arriving; enable Follow to jump to the latest.
 5. **Clear view** clears the screen only. **Clear log** archives the file and completely clears the displayed text, unfinished characters and queued audio. Newly received text can then appear.
 
-**Copy to clipboard**, beside Clear log, copies all text in the displayed box without artificial display wrapping, including new text received while you were scrolled back. Its timestamp and receiver metadata describe the moment of copying. The older **Copy text** and **Copy all** commands copy the current live transcript without metadata.
+**Copy to clipboard**, beside Clear log, copies the selected version without artificial display wrapping, including text received while scrolled back or on another tab. Its timestamp and metadata describe the moment of copying. Right-click **Copy all** copies text without metadata. **Log file...** contains Open, Show in Finder, Rename and New log.
 
 Markdown logs use UTC section timestamps. Retuning starts a new frequency section. Rename never overwrites another log; the `.md` extension is automatic.
 
 ### Recovery controls
 
-The original decode is the default view. **Show timing recovery instead of original** switches between two retained session transcripts without rewriting either one. Timing repair is enabled for the separate recovery version by default under **Recovery**. It can be switched off independently.
+The original decode is the default. The selector above the transcript switches between **Original decode** and **Timing + fade recovery (unverified)**. Repair is enabled for the separate version by default in **Decoder**. During learning, a labeled provisional section appears after two seconds of detected keying and can be revised every quarter second. Its first-pass speed stays within 5-45 WPM with a modest 20 WPM preference for ambiguous evidence. It does not call the confirmed-output callback or enter the Markdown log. Confirmed replay replaces it; already confirmed text is not retroactively rewritten. Retuning clears the provisional section and its measured intervals.
 
-Timing repair filters very short key glitches, estimates uneven character spacing, and relearns timing after a long quiet interval. It can still misinterpret a signal. No dictionary, vocabulary substitutions, or word suggestions are used.
+Recovery follows sudden amplitude fades at the learned element speed, so a previous loud character is less likely to hide a quieter dot. It keeps the original noise-floor and carrier checks. It also filters very short key glitches, estimates uneven character spacing, and relearns timing after a long quiet interval. It can still misinterpret a signal, and cannot reconstruct elements lost below the detectable noise level. No dictionary, station template, repeated-message substitution or vocabulary suggestions are used. Changing messages require no special action.
 
 Autosave retains labeled original chunks and differing timing-recovery chunks in the same Markdown file. Turning an option off affects future decoding, not historical text. **Clear log** clears both views after archiving successfully. A restart restores settings and the log path; session text is available in the saved file, not reloaded into the box. Old log entries are preserved when updating from a version that included vocabulary hints.
 
@@ -83,7 +87,8 @@ If receiver samples stop arriving, the plugin retries its private channel after 
 ### Limits
 
 - One signal at a time. This is not a band-wide skimmer.
-- Synthetic tests cover 3-200 WPM; this is not a guarantee for every real signal or sending style.
+- Automatic timing defaults to 5-45 WPM. Manual speed and the extended range support 3-200 WPM in synthetic tests; this is not a guarantee for every real signal or sending style.
+- Learning buffers last for the current uninterrupted reception. Temporary storage does not survive a crash, restart or explicit reset. Disk failures are reported. Buffering cannot recover RF/audio samples missed before tone detection or during a stream interruption.
 - Fading, interference, weak signals and nonstandard timing can cause errors in either view. `[?]` marks unknown patterns.
 - Deep fading can destabilize automatic speed. A manual speed lock may help.
 - The displayed transcript is bounded to roughly 80-100 KB; saved logs are not trimmed. Saving failures retain pending text up to a visible 2 MB safety limit.
@@ -120,7 +125,7 @@ sh scripts/check.sh
 
 ```text
 Brown IQ stream
-  → private 500 Hz channel at 8 kHz, following Radio
+  → private channel at 8 kHz, following Radio's CW filter (500 Hz for USB/LSB)
   → shift to an 800 Hz mono tone
   → bounded audio queue
   → one decoder / log worker

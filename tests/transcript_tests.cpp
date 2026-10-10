@@ -47,6 +47,9 @@ int main(){try{
     require(shown("MORE"),"Scrolling froze incoming text");
     view.clear();follow=true;frame("NEW STATION");
     require(shown("NEW STATION")&&!shown("DE TEST"),"Clearing retained old transcript");
+    const std::string hiddenUpdate="NEW STATION WHILE SETTINGS OPEN";
+    view.copyReport(7020000,12,-20,false,false,&hiddenUpdate);
+    require(clipboard.find("WHILE SETTINGS OPEN")!=std::string::npos,"Copy report omitted text received on another tab");
     // The same presentation helper used on plugin enable and sidebar reopening
     // must recover a hidden/off-screen window after the host display shrinks.
     bool present=false;

@@ -6,6 +6,7 @@ Receive-only SDR++Brown plugin maintained by ReLLL. Public source: GPL-3.0-or-la
 - Decoder and log worker are independent of ImGui. IQ callback shifts an 8 kHz channel to an 800 Hz testable audio representation and enqueues it.
 - One decoding worker; one host stream-drain thread plus Brown's channel DSP. No worker pool or network services.
 - Keep UI responsive, logs recoverable, and all errors visible. Preserve the original decode. Timing recovery is a separate, unverified interpretation. No vocabulary correction or suggestions.
+- During timing acquisition, show a labeled provisional draft after about two seconds; never autosave it as confirmed text. Retuning clears measured intervals and drafts, preserves confirmed text, and starts fresh timing acquisition.
 - Never overwrite a user log when renaming. Clearing archives the previous file.
 - Tests: `cmake --build build -j 4 && ctest --test-dir build --output-on-failure`.
 - Memory checks: configure `build-sanitize` with `-DBUILD_PLUGIN=OFF -DSANITIZE=ON`.

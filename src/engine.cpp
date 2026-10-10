@@ -7,6 +7,16 @@
 #include <fstream>
 
 namespace cw {
+std::string transcriptText(const Snapshot& s,bool recovered){
+    auto text=recovered?s.recoveredText:s.text;
+    const auto& d=recovered?s.recoveredDecoder:s.decoder;
+    if(!d.provisional.empty()){
+        if(!text.empty())text+="\n\n";
+        text+="[PROVISIONAL - learning, about "+std::to_string(int(std::lround(d.provisionalWpm)))+" WPM; may change]\n";
+        text+=d.provisional;
+    }
+    return text;
+}
 Engine::Engine(const std::filesystem::path& folder):journal_(folder),folder_(folder){
     decoder_.recovery(false);
     decoder_.output=[this](const std::string& s){decoded(s);};
@@ -35,6 +45,7 @@ void Engine::resetDecoders(){
     decoder_.reset(manualWpm_,manualTone_);
     recoveredDecoder_.recovery(timingRecovery_);
     recoveredDecoder_.reset(manualWpm_,manualTone_);
+    decoder_.extendedSpeed(extendedSpeed_);recoveredDecoder_.extendedSpeed(extendedSpeed_);
 }
 void Engine::stationChanged(double frequency){
     if(frequency_>0&&std::abs(frequency-frequency_)>.5){
@@ -79,7 +90,7 @@ void Engine::flush(){
         const auto& segment=pending_.front();
         std::string record="Original decode: "+segment.text;
         if(!segment.recovered.empty()&&segment.recovered!=segment.text)
-            record+="\nTiming recovery (unverified): "+segment.recovered;
+            record+="\nTiming + fade recovery (unverified): "+segment.recovered;
         record+='\n';
         journal_.append(record,segment.frequency,segment.wpm);
         saved_+=segment.text.size();unsavedBytes_-=segment.text.size()+segment.recovered.size();pending_.pop_front();
@@ -96,7 +107,7 @@ void Engine::preferences(){
     std::filesystem::create_directories(folder_);
     auto temp=folder_/".decoder-settings.tmp";
     // Keep the retired vocabulary slot as zero for old preference compatibility.
-    {std::ofstream out(temp);out.exceptions(std::ios::badbit|std::ios::failbit);out<<autoSave_<<' '<<manualWpm_<<' '<<manualTone_<<' '<<timingRecovery_<<" 0 "<<autoRetune_<<'\n';}
+    {std::ofstream out(temp);out.exceptions(std::ios::badbit|std::ios::failbit);out<<autoSave_<<' '<<manualWpm_<<' '<<manualTone_<<' '<<timingRecovery_<<" 0 "<<autoRetune_<<' '<<extendedSpeed_<<'\n';}
     std::filesystem::rename(temp,folder_/".decoder-settings");
 }
 void Engine::apply(const Command& c){
@@ -139,8 +150,13 @@ void Engine::apply(const Command& c){
     else if(c.name=="wpm" || c.name=="tone"){
         float v=std::stof(c.value);
         if(!std::isfinite(v) || (v!=0 && (c.name=="wpm"?(v<3||v>200):(v<200||v>1800))))throw std::runtime_error("Setting outside supported range");
-        if(c.name=="wpm")manualWpm_=v;else manualTone_=v;
-        resetDecoders();
+        if(c.name=="wpm"){
+            manualWpm_=v;decoder_.setSpeed(v);recoveredDecoder_.setSpeed(v);
+        }else{manualTone_=v;resetDecoders();}
+    }
+    else if(c.name=="extended_speed"){
+        extendedSpeed_=c.value=="1";
+        decoder_.extendedSpeed(extendedSpeed_);recoveredDecoder_.extendedSpeed(extendedSpeed_);
     }
     else if(c.name=="timing_recovery"||c.name=="auto_retune"){
         if(c.name=="timing_recovery"){
@@ -148,7 +164,7 @@ void Engine::apply(const Command& c){
         }
         else autoRetune_=c.value=="1";
     }
-    if(c.name=="autosave"||c.name=="wpm"||c.name=="tone"||c.name=="timing_recovery"||c.name=="auto_retune")preferences();
+    if(c.name=="autosave"||c.name=="wpm"||c.name=="tone"||c.name=="timing_recovery"||c.name=="auto_retune"||c.name=="extended_speed")preferences();
     {std::lock_guard<std::mutex> lock(viewMutex_);view_.error.clear();}
 }
 void Engine::work(){
@@ -160,6 +176,7 @@ void Engine::work(){
             manualWpm_=wpm;manualTone_=tone;autoSave_=save;
             bool recovery=true,retired=false;if(prefs>>recovery>>retired)timingRecovery_=recovery;
             bool retune=true;if(prefs>>retune)autoRetune_=retune;
+            bool extended=false;if(prefs>>extended)extendedSpeed_=extended;
             resetDecoders();
         }
         std::ifstream in(folder_/".last-log");std::string name;
@@ -203,7 +220,7 @@ void Engine::work(){
         {std::lock_guard<std::mutex> lock(viewMutex_);view_.decoder=decoder_.stats();view_.frequency=frequency_;view_.blocks=blocks_;view_.dropped=dropped_;
             view_.path=journal_.path().string();view_.saved=saved_;view_.paused=paused_;view_.autosave=autoSave_;
             view_.manualWpm=manualWpm_;view_.manualTone=manualTone_;}
-        {std::lock_guard<std::mutex> lock(viewMutex_);view_.recoveredDecoder=recoveredDecoder_.stats();view_.timingRecovery=timingRecovery_;view_.autoRetune=autoRetune_;}
+        {std::lock_guard<std::mutex> lock(viewMutex_);view_.recoveredDecoder=recoveredDecoder_.stats();view_.timingRecovery=timingRecovery_;view_.autoRetune=autoRetune_;view_.extendedSpeed=extendedSpeed_;}
     }
     try{if(preferencesDirty_)preferences();flush();}catch(...){ /* Previous successfully synced rows remain recoverable. */ }
 }

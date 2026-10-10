@@ -25,7 +25,7 @@ std::vector<float> audio(const std::string& text,float wpm,int rate,float tone,f
 }
 void testTiming(){
     for(float wpm:{3,5,12,20,40,80,120,200}){
-        cw::Timing t;std::string out;t.output=[&](const std::string&s){out+=s;};t.reset();
+        cw::Timing t;t.extendedSpeed(true);std::string out;t.output=[&](const std::string&s){out+=s;};t.reset();
         auto run=[&](bool k,double u){for(int i=0;i<std::lround(u*1.2/wpm*1000);i++)t.tick(k);};
         for(char c:std::string("VVV DE 4XZ TEST 123")){if(c==' '){run(false,4);continue;}for(char s:symbols(c)){run(true,s=='.'?1:3);run(false,1);}run(false,2);}run(false,10);
         require(out.find("DE 4XZ TEST 123")!=std::string::npos,"Timing "+std::to_string(wpm)+": "+out);
@@ -34,7 +34,7 @@ void testTiming(){
 void testAudio(){
     for(auto wpm:{3,5,8,12,18,20,40,80,120,200}){
         auto samples=audio("VVV VVV DE 4XZ TEST 123",wpm,48000,800,.015,true);
-        cw::Decoder d;std::string out;d.output=[&](const std::string&s){out+=s;};
+        cw::Decoder d;d.extendedSpeed(true);std::string out;d.output=[&](const std::string&s){out+=s;};
         for(size_t i=0;i<samples.size();i+=977)d.process(samples.data()+i,std::min(size_t(977),samples.size()-i),48000);
         std::cout<<wpm<<" WPM: "<<out<<"\n";
         require(out.find("DE 4XZ TEST 123")!=std::string::npos,"Audio decode failed "+std::to_string(wpm));
@@ -153,9 +153,10 @@ void testEngine(){
             archived=savedOriginal(text).find("DE 4XZ TEST 123")!=std::string::npos;
         }
         require(archived,"Clear log archives decoded text");
-        engine.command("wpm","25");waitFor(engine,[](const auto& x){return x.manualWpm==25;});
+        engine.command("extended_speed","1");
+        engine.command("wpm","25");waitFor(engine,[](const auto& x){return x.manualWpm==25&&x.extendedSpeed;});
     }
-    {cw::Engine recovered(dir);auto s=waitFor(recovered,[](const auto& x){return !x.path.empty();});require(s.path==log,"Restart recovers renamed log");require(s.manualWpm==25,"Restart restores decoder preference");require(!s.timingRecovery,"Restart restores recovery choices");}
+    {cw::Engine recovered(dir);auto s=waitFor(recovered,[](const auto& x){return !x.path.empty();});require(s.path==log,"Restart recovers renamed log");require(s.manualWpm==25,"Restart restores decoder preference");require(!s.timingRecovery,"Restart restores recovery choices");require(s.extendedSpeed,"Restart restores automatic speed range");}
     std::filesystem::remove_all(dir);
 }
 void testIdleSpacing(){
@@ -209,6 +210,18 @@ void testIdleSpacing(){
         auto adapted=engine.snapshot();
         require(adapted.text.find("CQ CQ DE TEST SLOW CW",after.text.size())!=std::string::npos,"Retune did not decode slower station");
         require(adapted.decoder.calibrated&&std::abs(adapted.decoder.wpm-8)<1,"Retune kept previous station speed");
+        engine.command("retune","14021962");
+        waitFor(engine,[](const auto& s){return s.frequency==14021962;});
+        engine.command("tone","800");waitFor(engine,[](const auto& s){return s.manualTone==800;});
+        auto ambiguous=audio("EEEEEE",12,8000,800);
+        for(size_t i=0;i<ambiguous.size();i+=8000)
+            feed(std::vector<float>(ambiguous.begin()+i,ambiguous.begin()+std::min(i+8000,ambiguous.size())),8000,14021962);
+        auto buffered=engine.snapshot();
+        require(buffered.decoder.bufferedRuns>0&&buffered.recoveredDecoder.bufferedRuns>0,"Retune test needs held learning data in both paths");
+        engine.command("retune","14021963");
+        auto cleared=waitFor(engine,[](const auto& s){return s.frequency==14021963;});
+        require(cleared.decoder.bufferedRuns==0&&cleared.recoveredDecoder.bufferedRuns==0,"One-Hz retune must clear both learning buffers");
+        require(cleared.text==buffered.text,"Retune must preserve already confirmed text");
         engine.command("auto_retune","0");engine.command("wpm","25");engine.command("pause","1");
         waitFor(engine,[](const auto& s){return s.paused&&s.manualWpm==25&&!s.autoRetune;});
         engine.command("retune","7021960");

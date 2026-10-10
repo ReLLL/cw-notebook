@@ -11,7 +11,7 @@ public:
     void draw(const std::string& text, float height, float scale, bool& follow);
     void clear();
     void copyAll(const std::string& text);
-    void copyReport(double frequency, float wpm, float carrierOffset, bool manualSpeed,bool recovered=false);
+    void copyReport(double frequency, float wpm, float carrierOffset, bool manualSpeed,bool recovered=false,const std::string* currentText=nullptr);
     bool popupOpen() const { return popupOpen_; }
 private:
     static int selectionCallback(ImGuiInputTextCallbackData* data);

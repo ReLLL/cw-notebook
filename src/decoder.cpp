@@ -40,7 +40,9 @@ void Timing::reset(float manualWpm) {
     marks_.clear(); gaps_.clear(); pending_.clear(); symbol_.clear();
     ready_ = manualWpm > 0;
     filteredKey_=false;transition_=0;glitches_=0;gapCutoff_=2;
-    acquisitionUnit_=0;acquisitionHits_=0;
+    acquisitionUnit_=acquisitionCutoff_=0;
+    relockUnit_=0;markSerial_=relockSerial_=0;relockVotes_=0;
+    learningSeconds_=previewSeconds_=0;provisional_.clear();provisionalWpm_=0;
 }
 void Timing::estimate() {
     if(recovery_ && ready_ && gaps_.size()>=12){
@@ -57,10 +59,28 @@ void Timing::estimate() {
         if(inner.size()>=4 && letters.size()>=4 && high/low>1.4 && high/low<4)
             gapCutoff_=std::clamp((low+high)/(2*unit_),1.25,2.6);
     }
-    if (manual_ > 0 || marks_.size() < (ready_?4:6)) return;
-    std::vector<double> v(marks_.begin(), marks_.end());
+    if(!ready_)acquisitionUnit_=0;
+    if (manual_ > 0 || marks_.size() < (ready_?4:3)) return;
+    // Learning evidence is recent; pending_ independently retains the whole
+    // reception for replay. Noise before these 16 marks cannot stall learning.
+    std::vector<double> v(marks_.end()-std::min(size_t(16),marks_.size()),marks_.end());
+    if(ready_&&markSerial_!=relockSerial_){
+        relockSerial_=markSerial_;
+        double candidate=recentUnit(v,true);
+        if(candidate>0&&(candidate<unit_*.7||candidate>unit_*1.4)){
+            relockVotes_=relockUnit_>0&&std::abs(candidate/relockUnit_-1)<.12?relockVotes_+1:1;
+            relockUnit_=candidate;
+        }else{relockUnit_=0;relockVotes_=0;}
+    }
+    if(double robust=recentUnit(v)){
+        if(!ready_){acquisitionUnit_=robust;acquisitionCutoff_=2*robust;return;}
+        unit_=robust;cutoff_=2*robust;return;
+    }
+    // Poor new evidence must not overwrite a supported speed with a fit to
+    // fading fragments. Retuning and quiet reacquisition still reset it.
+    if(ready_)return;
     std::sort(v.begin(), v.end());
-    double a=v[v.size()/5], b=v[v.size()*4/5];
+    double a=v.front(), b=v.back();
     for (int n=0;n<8;n++) {
         std::vector<double> lo,hi;
         for (double x:v) (x<(a+b)/2 ? lo:hi).push_back(x);
@@ -69,27 +89,54 @@ void Timing::estimate() {
     }
     if (b/a > 1.8 && b/a < 5.5 && a>=.004 && b<=1.3) {
         double candidate=std::clamp((a+b/3)/2,.006,.4);
-        if(!ready_){
-            // Do not infer speed from isolated elements or a single outlier.
-            // Require dots, dashes and compatible within-letter gaps, then
-            // agreeing estimates before replaying buffered startup runs.
-            size_t dots=0,dashes=0,inner=0;
-            for(double mark:marks_){
-                if(mark>=candidate*.55&&mark<=candidate*1.55)++dots;
-                if(mark>=candidate*2.2&&mark<=candidate*3.8)++dashes;
-            }
-            for(double gap:gaps_)if(gap>=candidate*.55&&gap<=candidate*1.6)++inner;
-            if(dots<2||dashes<2||inner<3||dots+dashes<marks_.size()*.75){acquisitionHits_=0;return;}
-            acquisitionHits_=acquisitionUnit_>0&&std::abs(candidate-acquisitionUnit_)<candidate*.12?acquisitionHits_+1:1;
-            acquisitionUnit_=candidate;
-            // Gather candidate agreement before the eighth mark so a complete
-            // short CQ can unlock replay without needing another transmission.
-            if(marks_.size()<8||dots<3||dashes<3||acquisitionHits_<3)return;
+        // Reject unsupported estimates; clamping would relabel noise as CW.
+        if(!extendedSpeed_&&(candidate<1.2/45-1e-8||candidate>1.2/5+1e-8))return;
+        // A clean mixed character is enough, but it must finish with a
+        // character gap before committing. Single-class E/T is ambiguous.
+        size_t dots=0,dashes=0,inner=0;
+        for(double mark:v){
+            if(mark>=candidate*.55&&mark<=candidate*1.55)++dots;
+            if(mark>=candidate*2.2&&mark<=candidate*3.8)++dashes;
         }
-        unit_=candidate;
-        cutoff_=(a+b)/2;
-        ready_=true;
-    } else if(!ready_)acquisitionHits_=0;
+        size_t count=0;
+        for(auto it=gaps_.rbegin();it!=gaps_.rend()&&count<16;++it,++count)
+            if(*it>=candidate*.55&&*it<=candidate*1.6)++inner;
+        bool clean=dots>=1&&dashes>=1&&inner>=2&&dots+dashes>=v.size()*.9&&b/a>2.3&&b/a<3.7;
+        bool supported=v.size()>=8&&dots>=3&&dashes>=3&&inner>=3&&dots+dashes>=v.size()*.75;
+        if(!clean&&!supported)return;
+        double last=marks_.back();
+        if(last<candidate*.55||last>candidate*3.8)return;
+        acquisitionUnit_=candidate;acquisitionCutoff_=(a+b)/2;
+    }
+}
+void Timing::acquire(){
+    if(ready_||key_||acquisitionUnit_<=0||duration_<=acquisitionUnit_*2.2)return;
+    unit_=acquisitionUnit_;cutoff_=acquisitionCutoff_;ready_=true;
+    replay();
+    consume({false,duration_});
+}
+void Timing::setSpeed(float wpm){
+    relockUnit_=0;relockVotes_=0;
+    if(wpm<=0){if(ready_)reset();return;}
+    manual_=wpm;unit_=1.2/std::clamp(double(wpm),3.0,200.0);cutoff_=unit_*2;
+    ready_=true;replay();
+    if(!key_)consume({false,duration_});
+}
+void Timing::extendedSpeed(bool enabled){
+    extendedSpeed_=enabled;
+    if(!enabled&&manual_==0&&ready_&&(wpm()<5||wpm()>45))reset();
+    if(!ready_){estimate();acquire();}
+}
+void Timing::replay(){
+    // Interpret all held durations together only once the timing is supported.
+    // Retain the historical startup-noise rejection before the first valid mark.
+    bool begin=false;
+    pending_.each([&](const Run& run){
+        if(!begin&&run.key&&run.seconds>=unit_*.55&&run.seconds<=unit_*3.8)begin=true;
+        if(begin)consume(run);
+    });
+    pending_.clear();
+    provisional_.clear();provisionalWpm_=0;
 }
 void Timing::letter() {
     if (!symbol_.empty() && output) output(morse(symbol_));
@@ -130,31 +177,34 @@ void Timing::advance(bool key,double seconds) {
         Run r{key_,duration_};
         if (key_ && duration_>=.003 && duration_<=1.3) {
             marks_.push_back(duration_); if(marks_.size()>64)marks_.pop_front();
+            ++markSerial_;
         } else if (!key_ && duration_>=.003 && duration_<1.5) {
             gaps_.push_back(duration_); if(gaps_.size()>64)gaps_.pop_front();
         }
-        bool wasReady=ready_;
         estimate();
-        if (!wasReady) {
+        if (!ready_) {
             pending_.push_back(r);
-            if(pending_.size()>512) pending_.erase(pending_.begin(),pending_.begin()+256);
-            if(ready_) {
-                // Startup interference outside the learned mark range is not
-                // part of the first letter. Begin at a plausible keyed mark.
-                bool begin=false;
-                for(const auto& p:pending_){
-                    if(!begin && p.key && p.seconds>=unit_*.55 && p.seconds<=unit_*3.8)begin=true;
-                    if(begin)consume(p);
-                }
-                pending_.clear();
-            }
         } else consume(r);
         key_=key; duration_=0;
     }
     duration_+=seconds;
+    acquire();
+    preview(seconds);
     if (ready_ && !key_) consume({false,duration_});
+    // Finish the current character with its existing interpretation. Only
+    // sustained, high-support evidence may escape a mistaken speed lock.
+    if(ready_&&!key_&&relockVotes_>=4&&duration_>std::max(unit_,relockUnit_)*2.2){
+        unit_=relockUnit_;cutoff_=2*unit_;gapCutoff_=2;
+        relockUnit_=0;relockVotes_=0;
+    }
 }
 Decoder::Decoder() { reset(); }
+void Decoder::setSpeed(float wpm){
+    manualWpm_=wpm;timing_.setSpeed(wpm);
+    stats_.wpm=timing_.calibrated()?timing_.wpm():0;stats_.calibrated=timing_.calibrated();
+    stats_.bufferedRuns=timing_.bufferedRuns();
+    stats_.provisional=timing_.provisional();stats_.provisionalWpm=timing_.provisionalWpm();
+}
 void Decoder::reset(float wpm, float tone) {
     manualWpm_=wpm;quietTicks_=0;quietReset_=false;
     timing_.reset(wpm);
@@ -223,7 +273,10 @@ void Decoder::findTone() {
 void Decoder::sample(float x) {
     audio_[audioPos_]=x;audioPos_=(audioPos_+1)%1024;
     if(++samples_%512==0 && samples_>=1024)findTone();
-    float cutoff=timing_.calibrated()?std::clamp(timing_.wpm()*4.f,90.f,500.f):200.f;
+    // Ordinary CW acquisition needs less noise bandwidth than the extended
+    // high-speed range. Keep this tone-envelope filter separate from Radio's
+    // channel width, which still bounds the input signal.
+    float cutoff=timing_.calibrated()?std::clamp(timing_.wpm()*4.f,90.f,500.f):(extendedSpeed_?200.f:90.f);
     float alpha=1-std::exp(-2*pi*cutoff/4000);
     phase_+=2*pi*stats_.tone/4000;if(phase_>2*pi)phase_-=2*pi;
     iqI_+=alpha*(x*std::cos(phase_)-iqI_);iqQ_+=alpha*(x*std::sin(phase_)-iqQ_);
@@ -239,17 +292,30 @@ void Decoder::envelope(float x) {
         std::sort(sorted.begin(),sorted.end());
         noise_=sorted[count/5];
     }
-    peak_=std::max(x,peak_*.997f);
+    // A fixed 333 ms peak memory can hide the next quiet dot after a loud
+    // character. In the optional recovery path, follow amplitude on the
+    // current element timescale. Keep the same noise floor and tone gates.
+    float decay=.997f;
+    if(recovery_&&timing_.calibrated()){
+        float memoryMs=std::clamp(1800.f/timing_.wpm(),30.f,300.f);
+        decay=std::exp(-1.f/memoryMs);
+    }
+    peak_=std::max(x,peak_*decay);
     float range=std::max(peak_-noise_,1e-9f);
     float threshold=noise_+range*(key_?.22f:.38f);
-    bool candidate=x>std::max(threshold,noise_*5.f) && peak_>noise_*6.f && peak_>1e-7f && toneLocked_;
-    int debounceTicks=timing_.calibrated()?std::clamp(int(144/timing_.wpm()),2,12):2;
+    // Requiring five times the noise envelope chopped audible weak dashes
+    // into short pulses. Tone lock, hysteresis and debounce reject noise
+    // without requiring that excessive instantaneous amplitude margin.
+    bool ordinary=!extendedSpeed_&&(manualWpm_==0||(manualWpm_>=5&&manualWpm_<=45));
+    bool candidate=x>std::max(threshold,noise_*(ordinary?3.f:5.f)) &&
+        peak_>noise_*(ordinary?4.f:6.f) && peak_>1e-7f && toneLocked_;
+    int debounceTicks=timing_.calibrated()?std::clamp(int(144/timing_.wpm()),2,12):(extendedSpeed_?2:6);
     if(candidate!=key_) {if(++debounce_>=debounceTicks){key_=candidate;debounce_=0;}} else debounce_=0;
     // Delay acquisition until the first tone estimate, avoiding startup filter clicks.
     if(ticks_>=300)timing_.tick(key_);
     if(recovery_){
         if(key_){quietTicks_=0;quietReset_=false;}
-        else if(++quietTicks_>12000 && !quietReset_){
+        else if(++quietTicks_>12000 && !quietReset_ && timing_.calibrated()){
             // No guessed text at loss of signal; retain manual locks, clear
             // learned timing so the next operator can have a different speed.
             timing_.reset(manualWpm_);quietReset_=true;++stats_.recoveries;
@@ -258,6 +324,8 @@ void Decoder::envelope(float x) {
     stats_.level=x;stats_.threshold=threshold;stats_.keyed=key_;
     stats_.wpm=timing_.calibrated()?timing_.wpm():0;stats_.calibrated=timing_.calibrated();
     stats_.filteredGlitches=timing_.glitches();
+    stats_.bufferedRuns=timing_.bufferedRuns();
+    stats_.provisional=timing_.provisional();stats_.provisionalWpm=timing_.provisionalWpm();
     if(trace)trace(key_,x,threshold);
 }
 }

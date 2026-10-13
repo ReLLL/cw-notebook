@@ -4,6 +4,16 @@ read_when: Changing thresholds, supported ranges, compatibility, or reliability 
 
 # Validation
 
+## Local 1.0.34 check, 2026-10-13
+
+All seven portable C++ targets, three installer tests, ASan/UBSan targets and the real-ImGui transcript regression passed. New channel tests cover CW, USB, LSB, DSB, AM keyed carriers and AM audio tones through ReceiveChannel, ChannelMixer and Decoder, in both decoding paths. They include signals near both passband edges, carrier-offset sign, silence rejection and unsupported-mode rejection. Standalone AM tests also cover 24 kHz for compatible hosts; the installed Brown build limits AM to 15 kHz.
+
+Synthetic IQ replay in the actual Brown host decoded the complete body `CQ CQ DE TEST 123 K` in CW at 400 Hz width; USB/LSB/DSB at the full 12 kHz width; and both AM input choices at 15 kHz width. The first startup prefix sometimes read `TVV` or `AVV` instead of `VVV`; no perfect transcript is claimed. All modes reported zero dropped packets and no errors. USB/LSB carrier offsets retained their correct signs, and AM audio tones reported an unavailable RF carrier offset. Intentional Pause survived a mode change, unsupported NFM stopped capture, and returning to AM resumed it. These are controlled replays, not on-air reception evidence.
+
+Browser handoff tests cover context, verbatim text, URL encoding, all three providers and complete clipboard fallback for long transcripts. Clicking the actual popup's ChatGPT item opened the default Chrome browser with the transcript, frequency, band, grid, local date/time, WPM and carrier-offset context filled into the composer. The frequency stayed unchanged. The user still presses Send. Claude prefilling could not be verified past its sign-in page; Gemini opens its site with the full prompt copied for pasting. No browser API or account automation is used by the plugin.
+
+Installed Release binary matches the build byte-for-byte, SHA-256 `105200bdfa19caa9898aeaaf89d9aa5ddf41d61905ad63cbc5c57cab3a488f25`. Original log preferences were restored after the isolated test profile was closed. The normal RTL-SDR profile resumed at its previous 7.092 MHz LSB setting; the plugin followed the 3039 Hz Radio filter at 16 kHz input. Input and processing counts advanced, with zero drops or errors and one Brown instance. No on-air CW transcript was established at that voice-band setting.
+
 ## Public, reproducible checks
 
 Version 1.0.32 tests distorted slow marks with two long elements that a faster fit previously discarded as outliers. The preceding build incorrectly acquires at 37.5 WPM; the revised fit must withhold that fast lock and acquire 20 WPM as more slow timing arrives. Both original and recovery timing paths are covered.

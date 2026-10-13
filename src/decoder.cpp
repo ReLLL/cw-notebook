@@ -222,36 +222,43 @@ void Decoder::reset(float wpm, float tone) {
 void Decoder::process(const float* mono,size_t count,int rate) {
     if(rate<4000 || rate>384000)return;
     rate_=rate;
-    const float alpha=1-std::exp(-2*pi*1700/rate);
+    const int processingRate=wideInput_?rate:4000;
+    if(wideInput_&&rate!=16000&&rate!=32000&&rate!=64000)return;
+    analysisRate_=processingRate;
+    if(rate<processingRate)return;
+    const float alpha=1-std::exp(-2*pi*(wideInput_?processingRate/2-1000:1700)/rate);
     for(size_t i=0;i<count;i++) {
         float x=std::isfinite(mono[i])?mono[i]:0;
         low1_+=alpha*(x-low1_); low2_+=alpha*(low1_-low2_);
-        resample_+=4000;
+        resample_+=processingRate;
         if(resample_>=rate) { resample_-=rate; sample(low2_); }
     }
 }
 void Decoder::findTone() {
     if(manualTone_>0) {stats_.tone=manualTone_;stats_.signal=true;return;}
-    std::array<std::complex<float>,1024> fft;
-    for(size_t i=0;i<1024;i++)fft[i]={audio_[(audioPos_+i)%1024]*float(.5-.5*std::cos(2*pi*i/1023)),0};
-    for(size_t i=1,j=0;i<1024;i++) {
-        size_t bit=512;for(;j&bit;bit>>=1)j^=bit;j^=bit;
+    const size_t length=analysisRate_/4000*1024;
+    const int processingRate=analysisRate_;
+    std::array<std::complex<float>,16384> fft;
+    for(size_t i=0;i<length;i++)fft[i]={audio_[(audioPos_+i)%length]*float(.5-.5*std::cos(2*pi*i/(length-1))),0};
+    for(size_t i=1,j=0;i<length;i++) {
+        size_t bit=length/2;for(;j&bit;bit>>=1)j^=bit;j^=bit;
         if(i<j)std::swap(fft[i],fft[j]);
     }
-    for(size_t len=2;len<=1024;len*=2) {
+    for(size_t len=2;len<=length;len*=2) {
         auto step=std::polar(1.f,float(-2*pi/len));
-        for(size_t i=0;i<1024;i+=len) {
+        for(size_t i=0;i<length;i+=len) {
             std::complex<float>w=1;
             for(size_t j=0;j<len/2;j++) {auto u=fft[i+j],v=fft[i+j+len/2]*w;fft[i+j]=u+v;fft[i+j+len/2]=u-v;w*=step;}
         }
     }
     size_t best=51;
     std::vector<float> powers;
-    for(size_t i=51;i<461;i++) {powers.push_back(std::norm(fft[i]));if(std::norm(fft[i])>std::norm(fft[best]))best=i;}
+    const size_t end=wideInput_?size_t((processingRate/2-1000)*length/processingRate):461;
+    for(size_t i=51;i<end;i++) {powers.push_back(std::norm(fft[i]));if(std::norm(fft[i])>std::norm(fft[best]))best=i;}
     std::sort(powers.begin(),powers.end());
     float peak=std::norm(fft[best]), floor=powers[powers.size()/2];
     std::vector<float> local;
-    for(int i=std::max(1,int(best)-16);i<std::min(511,int(best)+17);i++)
+    for(int i=std::max(1,int(best)-16);i<std::min(int(length/2)-1,int(best)+17);i++)
         if(std::abs(i-int(best))>3)local.push_back(std::norm(fft[i]));
     std::sort(local.begin(),local.end());
     floor=std::max(floor,local[local.size()/2]);
@@ -260,7 +267,7 @@ void Decoder::findTone() {
     if(stats_.signal) {
         float a=std::abs(fft[best-1]),b=std::abs(fft[best]),c=std::abs(fft[best+1]);
         float offset=.5f*(a-c)/(a-2*b+c-1e-20f);
-        float f=(best+std::clamp(offset,-.5f,.5f))*4000/1024;
+        float f=(best+std::clamp(offset,-.5f,.5f))*processingRate/length;
         stableTones_=std::abs(f-candidateTone_)<12?stableTones_+1:1;
         candidateTone_=f;
         if(stableTones_>=3){
@@ -271,18 +278,21 @@ void Decoder::findTone() {
     if(ticks_-lastToneTick_>3000)toneLocked_=false;
 }
 void Decoder::sample(float x) {
-    audio_[audioPos_]=x;audioPos_=(audioPos_+1)%1024;
-    if(++samples_%512==0 && samples_>=1024)findTone();
+    const size_t length=analysisRate_/4000*1024;
+    const int processingRate=analysisRate_;
+    audio_[audioPos_]=x;audioPos_=(audioPos_+1)%length;
+    if(++samples_%(length/2)==0 && samples_>=length)findTone();
     // Ordinary CW acquisition needs less noise bandwidth than the extended
     // high-speed range. Keep this tone-envelope filter separate from Radio's
     // channel width, which still bounds the input signal.
     float cutoff=timing_.calibrated()?std::clamp(timing_.wpm()*4.f,90.f,500.f):(extendedSpeed_?200.f:90.f);
-    float alpha=1-std::exp(-2*pi*cutoff/4000);
-    phase_+=2*pi*stats_.tone/4000;if(phase_>2*pi)phase_-=2*pi;
+    float alpha=1-std::exp(-2*pi*cutoff/processingRate);
+    phase_+=2*pi*stats_.tone/processingRate;if(phase_>2*pi)phase_-=2*pi;
     iqI_+=alpha*(x*std::cos(phase_)-iqI_);iqQ_+=alpha*(x*std::sin(phase_)-iqQ_);
     i2_+=alpha*(iqI_-i2_);q2_+=alpha*(iqQ_-q2_);
     sum_+=std::hypot(i2_,q2_);
-    if(samples_%4==0){envelope(sum_/4);sum_=0;}
+    const int perTick=processingRate/1000;
+    if(samples_%perTick==0){envelope(sum_/perTick);sum_=0;}
 }
 void Decoder::envelope(float x) {
     levels_[levelPos_]=x;levelPos_=(levelPos_+1)%levels_.size();

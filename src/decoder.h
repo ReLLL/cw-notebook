@@ -69,6 +69,7 @@ public:
     void setSpeed(float manualWpm);
     void extendedSpeed(bool enabled) { extendedSpeed_=enabled;timing_.extendedSpeed(enabled); }
     void recovery(bool enabled) { recovery_=enabled;timing_.recovery(enabled); }
+    void wideInput(bool enabled) { wideInput_=enabled; }
     void process(const float* mono, size_t count, int sampleRate);
     DecoderStats stats() const { return stats_; }
 private:
@@ -77,7 +78,7 @@ private:
     void envelope(float x);
     Timing timing_;
     DecoderStats stats_;
-    std::array<float, 1024> audio_{};
+    std::array<float, 16384> audio_{};
     std::array<float, 4096> levels_{};
     size_t audioPos_ = 0, levelPos_ = 0, samples_ = 0, ticks_ = 0;
     float manualTone_ = 0, noise_ = 0, peak_ = 0, low1_ = 0, low2_ = 0;
@@ -90,6 +91,8 @@ private:
     size_t lastToneTick_ = 0;
     bool recovery_=true, quietReset_=false, extendedSpeed_=false;
     float manualWpm_=0;
+    bool wideInput_=false;
+    int analysisRate_=4000;
     size_t quietTicks_=0;
 };
 std::string morse(const std::string& symbol);

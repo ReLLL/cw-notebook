@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <locale>
 #include <sstream>
+#include <cmath>
 
 void TranscriptView::clear(){
     source_.clear();selection_.clear();buffer_.assign(1,'\0');width_=0;resetSelection_=true;
@@ -34,8 +35,10 @@ void TranscriptView::copyReport(double frequency,float wpm,float carrierOffset,b
           <<"Time zone:      Local (UTC"<<zone<<")\n"
           <<"Frequency:      "<<std::fixed<<std::setprecision(3)<<frequency/1000<<" kHz\n"
           <<"Speed:          "<<std::setprecision(1)<<wpm<<" WPM ("<<(manualSpeed?"manual":"estimated")<<")\n"
-          <<"Carrier offset: "<<std::showpos<<std::setprecision(0)<<carrierOffset<<std::noshowpos<<" Hz\n\n"
-          <<(recovered?"Timing + fade recovery (unverified)":"Original decode")<<"\n-------------\n"<<text;
+          <<"Carrier offset: ";
+    if(std::isfinite(carrierOffset))report<<std::showpos<<std::setprecision(0)<<carrierOffset<<std::noshowpos<<" Hz";
+    else report<<"Unavailable (AM audio tone)";
+    report<<"\n\n"<<(recovered?"Timing + fade recovery (unverified)":"Original decode")<<"\n-------------\n"<<text;
     if(text.empty() || text.back()!='\n')report<<'\n';
     copied(report.str(),"reception details and displayed text");
 }

@@ -4,6 +4,8 @@
 #include "engine.h"
 #include "transcript_view.h"
 #include "stream_watchdog.h"
+#include "receive_channel.h"
+#include "ai_handoff.h"
 #include <module.h>
 #include <gui/gui.h>
 #include <dsp/sink/handler_sink.h>
@@ -27,6 +29,7 @@ private:
     void metadata();
     static void audio(dsp::complex_t* samples,int count,void* ctx);
     void openPath(const std::string& path,bool reveal);
+    void explainWithAI(int provider);
     void logControls(const cw::Snapshot& s);
     void decoderControls(const cw::Snapshot& s);
     std::string name_,streamName_="Radio";
@@ -46,7 +49,11 @@ private:
     std::atomic<int> sampleRate_{8000};
     std::atomic<double> frequency_{0};
     std::atomic<bool> accept_{false};
-    double mixerPhase_=0,channelOffset_=0;
+    double channelOffset_=0;
+    cw::ReceiveChannel channel_;
+    cw::ChannelMixer mixer_;
+    std::mutex channelMutex_;
+    std::string mode_;
     double bandwidth_=500;
     bool followsBandwidth_=false;
     bool enabled_=true,window_=true,follow_=true,manualSpeed_=false,manualPitch_=false;
@@ -55,6 +62,8 @@ private:
     bool renaming_=false;
     bool ownsMouseGesture_=false;
     bool controlsPopupOpen_=false;
+    std::string aiNotice_;
+    double aiNoticeAt_=-10;
     float speed_=20,pitch_=800,textSize_=1.15;
     int frame_=0;
     uint64_t lastBlocks_=0, lastTranscriptReset_=0;

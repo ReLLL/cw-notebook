@@ -10,9 +10,10 @@ If the transcript is hidden or outside the visible area, use **Bring CW Notebook
 - Key and gap durations are held during learning and replayed when timing becomes usable. Long buffers spill to a temporary file instead of dropping their beginning.
 - Speed learning uses the latest 16 marks and recent gaps. Poor evidence leaves timing unchanged; sustained, strongly supported new timing can correct a mistaken automatic speed lock. Manual speed stays fixed.
 - Provisional letters appear after two seconds of detected keying and update as timing improves. The labeled draft is replaced by confirmed replay; only confirmed text is autosaved.
-- CW reception follows Radio's filter width. Transcript, Decoder and How to use tabs keep the main view compact.
+- CW, USB, LSB, DSB and AM reception follows Radio's full selected passband. AM offers keyed RF carriers or Morse audio tones. Transcript, Decoder and How to use tabs keep the main view compact.
 - Readable, resizable text; selection, Cmd+C, and right-click Copy selection / Copy all.
 - **Copy to clipboard** exports the displayed transcript with local SQL-style date/time, weekday, UTC offset, current frequency, speed, and carrier offset.
+- **Explain with AI...** opens ChatGPT, Claude or Gemini in the default browser with an analysis prompt and reception context. The complete prompt is copied for every provider; Gemini and long transcripts require pasting.
 - Markdown autosave, rename, new log, Finder reveal, and one-click clear with a dated backup.
 - Select and scroll while incoming text continues; plugin gestures do not retune the waterfall.
 - No extra blank pages during silence or silent tuning.
@@ -44,7 +45,7 @@ This is an independent community plugin, not an official SDR++Brown release. The
    python3 scripts/install.py --binary cw_notebook.dylib
    ```
 
-5. Restart Brown. **CW Notebook** appears in the sidebar. Start the receiver, choose **CW** in Radio, and tune one narrow keyed signal.
+5. Restart Brown. **CW Notebook** appears in the sidebar. Start the receiver, choose **CW**, **USB**, **LSB**, **DSB** or **AM** in Radio, and tune one Morse signal inside its filter.
 
 Python 3 is required; no Python packages are needed. The installer refuses to run while Brown is open and checks the binary architecture. It backs up the configuration and previous plugin, then installs outside the signed app bundle.
 
@@ -64,13 +65,17 @@ To uninstall, disable/remove the **CW Notebook** instance in Module Manager. Wit
 
 ## Receiving Morse
 
-1. Choose **CW** and put one keyed carrier inside Radio's filter. CW Notebook follows its width; narrow it to exclude nearby stations. USB/LSB retain a centered 500 Hz CW channel. Speaker mute does not stop decoding.
-2. Tune another station or band normally. Acquisition restarts automatically; the next decoded text starts on one new line. Earlier text remains. Manual speed/tone locks are released by default; disable **Release manual locks when tuning a new station** in Decoder to retain them. An intentional Pause remains paused.
+1. Choose **CW**, **USB**, **LSB**, **DSB** or **AM** and put one Morse signal inside Radio's filter. USB captures above the dial, LSB below it, and DSB/AM on both sides. CW Notebook follows the full selected width, including the tested Brown build's 12 kHz sideband and 15 kHz AM maxima; narrow it to exclude nearby stations. In AM choose **Keyed RF carrier** for ordinary on/off CW (default), or **AM audio tones** for Morse modulating a carrier. Speaker mute does not stop decoding. Voice, overlapping carriers and interference can produce incorrect letters; this remains a one-signal decoder.
+2. Tune another station or band normally. Acquisition restarts automatically; the next decoded text starts on one new line. Earlier text remains. Changing modulation also clears unfinished acquisition and starts a new text line. Manual speed/tone locks are released by default; disable **Release manual locks when tuning a new station** in Decoder to retain them. An intentional Pause remains paused.
 3. Learning starts from zero after retuning. Key/gap durations stay buffered until mixed dot/dash evidence and a character gap establish timing. A clean D can unlock at its first character gap. Ambiguous sequences show a labeled provisional decode after about two seconds; confirmed output waits for stronger evidence. Silence retains the buffer. Manual WPM in **Decoder** can decode held intervals. **Relearn**, retuning, tone changes and stream resets discard uncommitted intervals; confirmed text remains.
 4. **Follow** controls automatic scrolling only. Clicking never freezes new text. Selecting or scrolling back holds the scroll position while text keeps arriving; enable Follow to jump to the latest.
 5. **Clear view** clears the screen only. **Clear log** archives the file and completely clears the displayed text, unfinished characters and queued audio. Newly received text can then appear.
 
 **Copy to clipboard**, beside Clear log, copies the selected version without artificial display wrapping, including text received while scrolled back or on another tab. Its timestamp and metadata describe the moment of copying. Right-click **Copy all** copies text without metadata. **Log file...** contains Open, Show in Finder, Rename and New log.
+
+**Explain with AI...** has ChatGPT, Claude and Gemini choices. It uses the displayed original or recovery version, including its labeled provisional section, and adds current frequency, band vicinity, approximate wavelength, Radio mode/filter, Brown's configured Maidenhead grid, local date/time and weekday, WPM, and carrier offset. AM audio-tone input reports the RF carrier offset as unavailable rather than confusing an audio pitch with RF offset. Earlier transcript lines may have been received at other frequencies; the prompt states that its metadata describes the current export.
+
+The prompt asks for abbreviation/prosign/callsign explanations, conversation flow, explicit uncertainty and a distinction between received text and suggested corrections. Your original transcript is unchanged. Choosing a provider shares this context with that site when the link carries the prompt. No API, account credentials, background upload or browser extension is used. Normal site login and Send controls still apply. ChatGPT and Claude are opened with a prompt link when the encoded URL fits 6,000 bytes; site support can vary. Gemini has no verified browser prompt-link support here, so paste the copied prompt and send. Longer prompts use the same clipboard fallback without truncating text. Feedback in the notebook explains the next action.
 
 Markdown logs use UTC section timestamps. Retuning starts a new frequency section. Rename never overwrites another log; the `.md` extension is automatic.
 
@@ -82,7 +87,7 @@ Recovery follows sudden amplitude fades at the learned element speed, so a previ
 
 Autosave retains labeled original chunks and differing timing-recovery chunks in the same Markdown file. Turning an option off affects future decoding, not historical text. **Clear log** clears both views after archiving successfully. A restart restores settings and the log path; session text is available in the saved file, not reloaded into the box. Old log entries are preserved when updating from a version that included vocabulary hints.
 
-If receiver samples stop arriving, the plugin retries its private channel after three seconds, backing off to 30 seconds. It leaves a stopped receiver or deliberate Pause alone. **Reconnect decoder** retries manually. **Save 20s signal** stores a private 8 kHz mono float32 capture under the log folder's `Diagnostics` directory for offline comparisons; continuous raw audio is not recorded.
+If receiver samples stop arriving, the plugin retries its private channel after three seconds, backing off to 30 seconds. It leaves a stopped receiver or deliberate Pause alone. **Reconnect decoder** retries manually. **Save 20s signal** stores a private mono float32 capture under the log folder's `Diagnostics` directory: 8 kHz in CW; 16 kHz for other supported filters up to 6 kHz, 32 kHz up to 12 kHz, and 64 kHz for wider AM filters. Continuous raw audio is not recorded.
 
 ### Limits
 
@@ -125,8 +130,8 @@ sh scripts/check.sh
 
 ```text
 Brown IQ stream
-  → private channel at 8 kHz, following Radio's CW filter (500 Hz for USB/LSB)
-  → shift to an 800 Hz mono tone
+  → private IQ channel following Radio's full passband (8 kHz CW, 16/32/64 kHz otherwise)
+  → map the selected passband to positive mono tones, preserving key timing
   → bounded audio queue
   → one decoder / log worker
        ├─ tone detection → key transitions → Morse timing → text

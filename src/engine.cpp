@@ -42,6 +42,7 @@ void Engine::command(std::string name,std::string value){
 }
 Snapshot Engine::snapshot(){std::lock_guard<std::mutex> lock(viewMutex_);return view_;}
 void Engine::resetDecoders(){
+    decoder_.wideInput(wideInput_);recoveredDecoder_.wideInput(wideInput_);
     decoder_.reset(manualWpm_,manualTone_);
     recoveredDecoder_.recovery(timingRecovery_);
     recoveredDecoder_.reset(manualWpm_,manualTone_);
@@ -107,7 +108,7 @@ void Engine::preferences(){
     std::filesystem::create_directories(folder_);
     auto temp=folder_/".decoder-settings.tmp";
     // Keep the retired vocabulary slot as zero for old preference compatibility.
-    {std::ofstream out(temp);out.exceptions(std::ios::badbit|std::ios::failbit);out<<autoSave_<<' '<<manualWpm_<<' '<<manualTone_<<' '<<timingRecovery_<<" 0 "<<autoRetune_<<' '<<extendedSpeed_<<'\n';}
+    {std::ofstream out(temp);out.exceptions(std::ios::badbit|std::ios::failbit);out<<autoSave_<<' '<<manualWpm_<<' '<<manualTone_<<' '<<timingRecovery_<<" 0 "<<autoRetune_<<' '<<extendedSpeed_<<' '<<amAudio_<<'\n';}
     std::filesystem::rename(temp,folder_/".decoder-settings");
 }
 void Engine::apply(const Command& c){
@@ -118,8 +119,16 @@ void Engine::apply(const Command& c){
         auto path=folder_/"Diagnostics"/("diagnostic-"+utc("%Y%m%d-%H%M%SZ")+".f32");
         if(std::filesystem::exists(path))throw std::runtime_error("Diagnostic file already exists");
         diagnostic_.open(path,std::ios::binary);diagnostic_.exceptions(std::ios::badbit|std::ios::failbit);
-        diagnosticRemaining_=8000*20;
+        diagnosticRemaining_=size_t(rate_>0?rate_:8000)*20;
         std::lock_guard<std::mutex> lock(viewMutex_);view_.notice="20-second diagnostic capture: "+path.string();
+    }
+    else if(c.name=="input_mode"||c.name=="am_audio"){
+        if(c.name=="am_audio")amAudio_=c.value=="1";
+        else wideInput_=c.value=="1";
+        if(autoRetune_){manualWpm_=manualTone_=0;preferencesDirty_=true;}
+        resetDecoders();transcriptBreakPending_=recoveredBreakPending_=true;
+        {std::lock_guard<std::mutex> lock(queueMutex_);queue_.clear();queuedSamples_=0;}
+        discardCurrentPacket_=true;
     }
     else if(c.name=="pause") {paused_=c.value=="1";resetDecoders();if(autoSave_)flush();}
     else if(c.name=="autosave") {autoSave_=c.value=="1";if(autoSave_)flush();}
@@ -149,7 +158,7 @@ void Engine::apply(const Command& c){
     }
     else if(c.name=="wpm" || c.name=="tone"){
         float v=std::stof(c.value);
-        if(!std::isfinite(v) || (v!=0 && (c.name=="wpm"?(v<3||v>200):(v<200||v>1800))))throw std::runtime_error("Setting outside supported range");
+        if(!std::isfinite(v) || (v!=0 && (c.name=="wpm"?(v<3||v>200):(v<200||v>(wideInput_?31000:1800)))))throw std::runtime_error("Setting outside supported range");
         if(c.name=="wpm"){
             manualWpm_=v;decoder_.setSpeed(v);recoveredDecoder_.setSpeed(v);
         }else{manualTone_=v;resetDecoders();}
@@ -164,7 +173,7 @@ void Engine::apply(const Command& c){
         }
         else autoRetune_=c.value=="1";
     }
-    if(c.name=="autosave"||c.name=="wpm"||c.name=="tone"||c.name=="timing_recovery"||c.name=="auto_retune"||c.name=="extended_speed")preferences();
+    if(c.name=="autosave"||c.name=="wpm"||c.name=="tone"||c.name=="timing_recovery"||c.name=="auto_retune"||c.name=="extended_speed"||c.name=="am_audio")preferences();
     {std::lock_guard<std::mutex> lock(viewMutex_);view_.error.clear();}
 }
 void Engine::work(){
@@ -172,11 +181,12 @@ void Engine::work(){
     try{
         std::ifstream prefs(folder_/".decoder-settings");float wpm=0,tone=0;bool save=true;
         if(prefs>>save>>wpm>>tone && std::isfinite(wpm)&&std::isfinite(tone) &&
-           (wpm==0||(wpm>=3&&wpm<=200)) && (tone==0||(tone>=200&&tone<=1800))){
+           (wpm==0||(wpm>=3&&wpm<=200)) && (tone==0||(tone>=200&&tone<=31000))){
             manualWpm_=wpm;manualTone_=tone;autoSave_=save;
             bool recovery=true,retired=false;if(prefs>>recovery>>retired)timingRecovery_=recovery;
             bool retune=true;if(prefs>>retune)autoRetune_=retune;
             bool extended=false;if(prefs>>extended)extendedSpeed_=extended;
+            bool amAudio=false;if(prefs>>amAudio)amAudio_=amAudio;
             resetDecoders();
         }
         std::ifstream in(folder_/".last-log");std::string name;
@@ -220,7 +230,7 @@ void Engine::work(){
         {std::lock_guard<std::mutex> lock(viewMutex_);view_.decoder=decoder_.stats();view_.frequency=frequency_;view_.blocks=blocks_;view_.dropped=dropped_;
             view_.path=journal_.path().string();view_.saved=saved_;view_.paused=paused_;view_.autosave=autoSave_;
             view_.manualWpm=manualWpm_;view_.manualTone=manualTone_;}
-        {std::lock_guard<std::mutex> lock(viewMutex_);view_.recoveredDecoder=recoveredDecoder_.stats();view_.timingRecovery=timingRecovery_;view_.autoRetune=autoRetune_;view_.extendedSpeed=extendedSpeed_;}
+        {std::lock_guard<std::mutex> lock(viewMutex_);view_.recoveredDecoder=recoveredDecoder_.stats();view_.timingRecovery=timingRecovery_;view_.autoRetune=autoRetune_;view_.extendedSpeed=extendedSpeed_;view_.amAudio=amAudio_;}
     }
     try{if(preferencesDirty_)preferences();flush();}catch(...){ /* Previous successfully synced rows remain recoverable. */ }
 }

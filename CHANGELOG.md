@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.34 - 2026-10-13
+
+- Add AM with the full selected RF bandwidth, including the tested host's 15 kHz maximum. Choose keyed RF carriers or envelope-demodulated Morse audio tones. Audio tones are not mislabeled as RF carrier offsets.
+- Add Explain with AI: ChatGPT, Claude and Gemini in the default browser, with the displayed transcript and reception context. Copy the complete prompt for every provider; use clipboard fallback for Gemini and long transcripts. No API integration or background upload.
+- Preserve originals and explicitly label provisional/recovery text. Analysis instructions distinguish literal reception from possible corrections and uncertain station identification.
+
+## 1.0.33 - 2026-10-13
+
+- Decode keyed CW carriers inside USB, LSB and DSB passbands. Replace the old centered 500 Hz sideband capture with Radio's actual filter position and full width, including its 12 kHz maximum.
+- Preserve CW-mode processing. Extend sideband tone acquisition without aliasing and show carrier offsets relative to the dial with the correct sign.
+- Restart acquisition on modulation changes while preserving confirmed text and intentional Pause. Update the operating guide and add synthetic IQ-to-text tests for both sidebands, DSB and CW.
+
 ## 1.0.32 - 2026-10-10
 
 - Reject a speed candidate when at least two recent marks exceed 4.3 of its proposed dot units. The fit can no longer discard repeated slow dashes as outliers to manufacture a faster lock.

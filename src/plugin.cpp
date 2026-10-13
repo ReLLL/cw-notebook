@@ -57,47 +57,50 @@ void CWNotebook::enable(){enabled_=true;window_=true;presentWindow_=true;select(
 void CWNotebook::disable(){enabled_=false;accept_=false;detach();engine_.command("save");}
 void CWNotebook::detach(){
     if(!audioStream_)return;
-    sink_.stop();sigpath::iqFrontEnd.removeVFO("cw_notebook_channel");audioStream_=nullptr;
+    sink_.stop();sigpath::iqFrontEnd.removeVFO("cw_notebook_channel");audioStream_=nullptr;mixer_.reset();
     engine_.command("reset");
 }
 void CWNotebook::select(const std::string& name){
     detach();streamName_=name;
     auto names=sigpath::sinkManager.getStreamNames();
     if(std::find(names.begin(),names.end(),name)==names.end()||!sigpath::vfoManager.vfoExists(name))return;
-    channelOffset_=sigpath::vfoManager.getOffset(name);
-    audioStream_=sigpath::iqFrontEnd.addVFO("cw_notebook_channel",8000,bandwidth_,channelOffset_);
+    channelOffset_=channel_.center;
+    audioStream_=sigpath::iqFrontEnd.addVFO("cw_notebook_channel",sampleRate_,bandwidth_,channelOffset_);
     if(audioStream_){sink_.setInput(&audioStream_->out);sink_.start();}
 }
 void CWNotebook::metadata(){
     playing_=gui::mainWindow.isPlaying();
     double frequency=gui::waterfall.getCenterFrequency();
-    if(sigpath::vfoManager.vfoExists(streamName_)){
-        double offset=sigpath::vfoManager.getOffset(streamName_);frequency+=offset;
-        if(audioStream_ && std::abs(offset-channelOffset_)>.1){audioStream_->setOffset(offset);channelOffset_=offset;}
-    }
+    const bool hasVfo=sigpath::vfoManager.vfoExists(streamName_);
+    double offset=hasVfo?sigpath::vfoManager.getOffset(streamName_):0;
+    if(hasVfo)frequency+=offset;
     else frequency=double(gui::freqSelect.frequency);
     double center=gui::waterfall.getCenterFrequency(),rate=sigpath::iqFrontEnd.getSampleRate();
     bool changed=lastFrequency_!=0&&(std::abs(frequency-lastFrequency_)>.5||center!=lastCenter_||rate!=lastRate_);
     if(changed){engine_.command("retune",std::to_string(frequency));watchdog_.grace(ImGui::GetTime());}
     lastFrequency_=frequency;lastCenter_=center;lastRate_=rate;frequency_=frequency;
     auto it=core::moduleManager.instances.find(streamName_);
-    supportedMode_=false;followsBandwidth_=false;
+    std::string mode;
     if(it!=core::moduleManager.instances.end() && it->second.instance){
         try {auto j=json::parse(it->second.instance->handleDebugCommand("get_demod",""));
-            auto mode=j.value("demod","");supportedMode_=mode=="CW"||mode=="USB"||mode=="LSB";
-            followsBandwidth_=mode=="CW";
+            mode=j.value("demod","");
         }catch(const json::exception&){}
     }
-    double width=500;
-    if(followsBandwidth_&&sigpath::vfoManager.vfoExists(streamName_)){
-        double selected=sigpath::vfoManager.getBandwidth(streamName_);
-        // Brown CW permits 50-500 Hz. The wider bound leaves room for compatible
-        // hosts while keeping the 800 Hz real-audio representation unaliased.
-        if(std::isfinite(selected)&&selected>=50&&selected<=1200)width=selected;
-        else followsBandwidth_=false;
+    auto plan=cw::receiveChannel(mode,offset,hasVfo?sigpath::vfoManager.getBandwidth(streamName_):500,engine_.snapshot().amAudio);
+    supportedMode_=plan.supported;followsBandwidth_=plan.supported;
+    bool modeChanged=mode!=mode_;
+    bool layoutChanged=modeChanged||std::abs(plan.width-bandwidth_)>.1||plan.amAudio!=channel_.amAudio;
+    if(layoutChanged){
+        accept_=false;detach();
+        {std::lock_guard<std::mutex> lock(channelMutex_);channel_=plan;}
+        bandwidth_=plan.width;sampleRate_=plan.sampleRate;mode_=mode;
+        if(modeChanged)engine_.command("input_mode",plan.wide?"1":"0");
+        if(enabled_)select(streamName_);
+        watchdog_.grace(ImGui::GetTime());
     }
-    if(audioStream_&&std::abs(width-bandwidth_)>.1){audioStream_->setBandwidth(width);bandwidth_=width;}
-    bool ready=enabled_ && supportedMode_ && playing_ && sigpath::vfoManager.vfoExists(streamName_);
+    {std::lock_guard<std::mutex> lock(channelMutex_);channel_.center=plan.center;}
+    if(audioStream_&&std::abs(plan.center-channelOffset_)>.1){audioStream_->setOffset(plan.center);channelOffset_=plan.center;}
+    bool ready=enabled_ && supportedMode_ && playing_ && hasVfo;
     if(ready!=accept_)engine_.command("reset");
     accept_=ready;
     if(watchdog_.check(ImGui::GetTime(),ready,engine_.snapshot().paused,inputBlocks_.load())){
@@ -109,11 +112,11 @@ void CWNotebook::audio(dsp::complex_t* samples,int count,void* ctx){
     auto* self=static_cast<CWNotebook*>(ctx);
     ++self->inputBlocks_;
     if(!self->accept_ || count<=0 || count>1000000)return;
+    cw::ReceiveChannel plan;
+    {std::lock_guard<std::mutex> lock(self->channelMutex_);plan=self->channel_;}
     std::vector<float> mono(size_t(count),0.f);
     for(int i=0;i<count;i++){
-        mono[i]=samples[i].re*std::cos(self->mixerPhase_)-samples[i].im*std::sin(self->mixerPhase_);
-        self->mixerPhase_+=2*3.141592653589793*800/8000;
-        if(self->mixerPhase_>=2*3.141592653589793)self->mixerPhase_-=2*3.141592653589793;
+        mono[i]=self->mixer_.sample(samples[i].re,samples[i].im,plan);
     }
     self->engine_.audio(std::move(mono),self->sampleRate_,self->frequency_);
 }
@@ -137,13 +140,15 @@ std::string CWNotebook::handleDebugCommand(const std::string& cmd,const std::str
             {"buffered_runs",s.decoder.bufferedRuns},{"recovery_buffered_runs",s.recoveredDecoder.bufferedRuns},
             {"extended_speed",s.extendedSpeed},
             {"provisional",s.decoder.provisional},{"provisional_wpm",s.decoder.provisionalWpm},
-            {"bandwidth_hz",bandwidth_},{"follows_radio_bandwidth",followsBandwidth_},
+            {"bandwidth_hz",bandwidth_},{"follows_radio_bandwidth",followsBandwidth_},{"mode",mode_},
+            {"channel_offset_hz",channelOffset_},{"sample_rate",sampleRate_.load()},
+            {"carrier_offset_hz",channel_.carrierOffset(s.decoder.tone)},{"supported_mode",supportedMode_},
             {"blocks",s.blocks},{"dropped",s.dropped},{"saved",s.saved},{"paused",s.paused},{"autosave",s.autosave},
-            {"level",s.decoder.level},{"threshold",s.decoder.threshold},{"contrast_db",s.decoder.snr},{"input","IQ 8k"},{"version",CW_VERSION_STRING},
-            {"manual_wpm",s.manualWpm},{"manual_tone",s.manualTone}}.dump();
+            {"level",s.decoder.level},{"threshold",s.decoder.threshold},{"contrast_db",s.decoder.snr},{"input","IQ"},{"version",CW_VERSION_STRING},
+            {"manual_wpm",s.manualWpm},{"manual_tone",s.manualTone},{"am_audio",s.amAudio}}.dump();
     }
     if(cmd=="reconnect"){accept_=false;select(streamName_);watchdog_.grace(ImGui::GetTime());++reconnects_;metadata();return "{\"status\":\"reconnected\"}";}
-    if(cmd=="capture"||cmd=="save"||cmd=="new"||cmd=="rename"||cmd=="clear_log"||cmd=="clear_view"||cmd=="pause"||cmd=="autosave"||cmd=="reset"||cmd=="wpm"||cmd=="tone"||cmd=="timing_recovery"||cmd=="auto_retune"||cmd=="extended_speed"){
+    if(cmd=="capture"||cmd=="save"||cmd=="new"||cmd=="rename"||cmd=="clear_log"||cmd=="clear_view"||cmd=="pause"||cmd=="autosave"||cmd=="reset"||cmd=="wpm"||cmd=="tone"||cmd=="timing_recovery"||cmd=="auto_retune"||cmd=="extended_speed"||cmd=="am_audio"){
         engine_.command(cmd,args);return "{\"status\":\"queued\"}";
     }
     return "{\"error\":\"Unknown command\"}";

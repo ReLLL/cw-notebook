@@ -18,8 +18,7 @@ void CWNotebook::sidebar(){
     }
     if(!supportedMode_){
         if(ImGui::Button("Use CW mode",ImVec2(-1,0))){
-            auto it=core::moduleManager.instances.find(streamName_);
-            if(it!=core::moduleManager.instances.end())it->second.instance->handleDebugCommand("set_demod","CW");
+            cw::host::useCW(streamName_);
         }
     }else if(s.decoder.calibrated){
         if(channel_.amAudio)ImGui::Text("%.1f WPM | AM tone %.0f Hz",s.decoder.wpm,s.decoder.tone);
@@ -73,6 +72,12 @@ void CWNotebook::logControls(const cw::Snapshot& s){
     ImGui::TextDisabled("%s",name.empty()?"A log is created when text arrives.":name.c_str());hint(s.path.c_str());
 }
 void CWNotebook::decoderControls(const cw::Snapshot& s){
+    if(!cw::host::brown){
+        ImGui::SetNextItemWidth(140);
+        if(ImGui::InputText("Receiver grid (optional)",grid_,sizeof(grid_),ImGuiInputTextFlags_EnterReturnsTrue))gridError_=!cw::host::setGrid(grid_,name_);
+        hint("Maidenhead grid for AI reception context. Press Enter to save; leave empty if unknown.");
+        if(gridError_)ImGui::TextColored(warning,"Use a 4, 6 or 8 character Maidenhead grid.");
+    }
     bool extended=s.extendedSpeed;
     if(ImGui::Checkbox("Extended automatic speed (3-200 WPM)",&extended))engine_.command("extended_speed",extended?"1":"0");
     ImGui::TextWrapped("Default: 5-45 WPM. Implausible estimates are rejected, not forced into letters.");
@@ -100,6 +105,7 @@ void CWNotebook::decoderControls(const cw::Snapshot& s){
     ImGui::TextWrapped("Follows sudden fades, filters brief glitches and adapts to uneven gaps. Select Timing + fade recovery in Transcript to compare. Original text is kept; no word replacement or vocabulary guessing.");
     ImGui::TextWrapped("CW, USB, LSB, DSB and AM use Radio's full passband. One keyed signal at a time; narrow the filter to reduce interference. Speaker volume and audio AGC do not affect decoding.");
     if(ImGui::CollapsingHeader("Diagnostics")){
+        ImGui::Text("CW Notebook %s | %s",CW_VERSION_STRING,cw::host::name);
         ImGui::Text("Glitches filtered: %llu | Quiet relearns: %llu | Reconnects: %llu",
             static_cast<unsigned long long>(s.recoveredDecoder.filteredGlitches),static_cast<unsigned long long>(s.recoveredDecoder.recoveries),static_cast<unsigned long long>(reconnects_));
         if(ImGui::Button("Reconnect decoder"))handleDebugCommand("reconnect","");

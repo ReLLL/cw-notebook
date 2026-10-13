@@ -4,6 +4,20 @@ read_when: Changing thresholds, supported ranges, compatibility, or reliability 
 
 # Validation
 
+## Local 1.0.35 host compatibility checks, 2026-10-13
+
+Brown keeps its native receiver commands, draw event and HTTP override. Standard SDR++ uses the radio interface and an EndFramePre hook; real-ImGui regression tests passed against both pinned host revisions, including drawing without a sidebar, continued transcript delivery and removing the hook before destruction. Installer tests cover wrong-host rejection without changes, separate profiles, retained grid/disabled preferences and rollback.
+
+All seven portable C++ targets and five Python installer tests passed. Both host-specific real-ImGui suites passed; the standard hook/transcript suite also passed ASan/UBSan. The installed hosts themselves were not sanitizer-instrumented. Separate Apple Silicon builds use the documented matching headers and each app's bundled core and VOLK libraries.
+
+Actual standard SDR++ 1.2.0 (May 28, 2024) replay decoded `CQ CQ DE TEST 123 K` in CW with a 400 Hz filter, USB/LSB/DSB at 12 kHz and keyed RF AM at 15 kHz. Native clipboard copying retained the transcript and reception metadata. SDR++Brown 1.2.1 (August 4, 2026) replay passed the same five modes and AM audio tones, with zero reported drops or errors. Brown's intentional Pause survived a mode change; unsupported NFM stopped capture and returning to AM resumed it. Estimated speed was 19.5 WPM for the 20 WPM fixture. Startup prefixes sometimes contained errors; these controlled replays do not establish on-air accuracy or perfect transcription.
+
+Both matching binaries were installed outside the signed app bundles and verified byte-for-byte. Brown SHA-256: `8689703e8bc1cd335bc94b7243bea34b762930492237cedc92aece599b4696c1`. Standard SHA-256: `ac2ad695d1d0647874850706a528c1dccf08fbf93ccba207e2a1acaecaaeee1d`. Isolated test profiles were closed and original log preferences restored; the user's latest real RTL-SDR profiles were preserved. The two release packages include distinct host manifests and no recordings or private profiles.
+
+Standard SDR++ restarted successfully with its normal RTL-SDR profile, CW Notebook visible, the previous 6.988 MHz LSB dial and 3281 Hz filter, receiver stopped and Ankara's coarse KM69 grid visible in Decoder. Brown's native location remains unchanged. Package inspection verified eight allowlisted files per ZIP, matching binary/manifest pairs and both archive checksums.
+
+During standard-host IQ replay testing, tuning a 15 kHz AM filter to the edge of a 96 kHz capture crashed the host in WaterFall::calculateVFOSignalInfo. An isolated ASan reproducer compiled that exact upstream function without CW Notebook and reproduced a heap-buffer-overflow: its clamped upper FFT index can equal rawFFTSize, but the maximum-search loop includes that index. This is a host boundary bug; the plugin creates no visible waterfall VFO. No host binary or signature was modified. Keep Radio's whole filter within the captured spectrum on this tested older host. Controlled decoding checks use valid in-capture passbands.
+
 ## Local 1.0.34 check, 2026-10-13
 
 All seven portable C++ targets, three installer tests, ASan/UBSan targets and the real-ImGui transcript regression passed. New channel tests cover CW, USB, LSB, DSB, AM keyed carriers and AM audio tones through ReceiveChannel, ChannelMixer and Decoder, in both decoding paths. They include signals near both passband edges, carrier-offset sign, silence rejection and unsupported-mode rejection. Standalone AM tests also cover 24 kHz for compatible hosts; the installed Brown build limits AM to 15 kHz.

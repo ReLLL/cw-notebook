@@ -15,9 +15,10 @@ Maintainer: [ReLLL](https://github.com/ReLLL). Repository: [cw-notebook](https:/
 
 ```sh
 python3 scripts/package.py --binary build-release/cw_notebook.dylib
+python3 scripts/package.py --host sdrpp --binary build-sdrpp/cw_notebook.dylib
 ```
 
-This creates a versioned ZIP and `SHA256SUMS.txt` in ignored `dist/`, using an explicit allowlist. The archive includes the installer, README, changelog, license and third-party notices. It does not include logs, fixtures, config or private build directories.
+This creates separate versioned brown/sdrpp ZIPs and a combined `SHA256SUMS.txt` in ignored `dist/`, using an explicit allowlist. Each archive includes its binary and host manifest, installer, README, changelog, license and third-party notices. It does not include logs, fixtures, config or private build directories. Brown is the primary target; test both hosts' native receiver integration, replay/retune, UI library and installer before claiming support. Never interchange binaries.
 
 Inspect `otool -L`, `vtool -show-build`, and `strings` for dependency paths, minimum OS and personal build paths. Do not re-sign or modify Brown. This community plugin is not a notarized standalone application; document that accurately. Publish source at the same tag as any binary.
 

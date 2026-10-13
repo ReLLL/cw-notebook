@@ -6,6 +6,7 @@
 #include "stream_watchdog.h"
 #include "receive_channel.h"
 #include "ai_handoff.h"
+#include "host_adapter.h"
 #include <module.h>
 #include <gui/gui.h>
 #include <dsp/sink/handler_sink.h>
@@ -20,7 +21,11 @@ public:
     void enable() override;
     void disable() override;
     bool isEnabled() override { return enabled_; }
-    std::string handleDebugCommand(const std::string& cmd,const std::string& args) override;
+    std::string handleDebugCommand(const std::string& cmd,const std::string& args)
+#if CW_HOST_BROWN
+        override
+#endif
+        ;
     void sidebar();
     void draw();
 private:
@@ -44,6 +49,7 @@ private:
     dsp::channel::RxVFO* audioStream_=nullptr;
     EventHandler<std::string> registered_,unregistering_;
     EventHandler<ImGuiContext*> drawHandler_;
+    ImGuiID drawHook_=0;
     EventHandler<ImGui::WaterFall::InputHandlerArgs> inputHandler_;
     ImVec2 windowMin_{0,0},windowMax_{0,0};
     std::atomic<int> sampleRate_{8000};
@@ -69,4 +75,6 @@ private:
     uint64_t lastBlocks_=0, lastTranscriptReset_=0;
     double lastAudioTime_=0;
     char filename_[256]{};
+    char grid_[9]{};
+    bool gridError_=false;
 };

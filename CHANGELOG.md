@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.35 - 2026-10-13
+
+- Add a separate standard SDR++ macOS build, retaining Brown as the primary native target. Keep all Brown receiver controls, UI event integration and HTTP automation.
+- Standard SDR++ uses its radio interface and a frame hook, preserving full-filter CW/USB/LSB/DSB/AM decoding, recovery, logs, clipboard and AI controls even when the sidebar is hidden.
+- Separate each host's logs/preferences; add an optional standard-host grid for AI context. Brown continues using its native grid.
+- Add host manifests, installer checks against wrong-host packages/profiles, and preservation of disabled-plugin and instance settings. Package each host separately.
+- Test transcript updates and hook removal against both hosts' ImGui sources; extend installer regression coverage.
+- Document the tested older SDR++ host's spectrum bounds bug: keep Radio's full filter inside the captured RF spectrum to avoid its edge-triggered crash. This was reproduced without CW Notebook.
+
 ## 1.0.34 - 2026-10-13
 
 - Add AM with the full selected RF bandwidth, including the tested host's 15 kHz maximum. Choose keyed RF carriers or envelope-demodulated Morse audio tones. Audio tones are not mislabeled as RF carrier offsets.

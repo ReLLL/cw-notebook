@@ -1,4 +1,4 @@
-# CW Notebook for SDR++Brown
+# CW Notebook for SDR++Brown and SDR++
 
 Decode one CW/Morse signal into a selectable transcript and recoverable Markdown log. Maintained by [ReLLL](https://github.com/ReLLL). Free and open source under GPL-3.0-or-later.
 
@@ -23,11 +23,22 @@ If the transcript is hidden or outside the visible area, use **Bring CW Notebook
 
 ## Compatibility
 
-The supplied binary is for **Apple Silicon Macs, macOS 15 or newer**, and **SDR++Brown 1.2.1, August 4, 2026 build**. It is tested on macOS 26. Older macOS versions meeting the build target have not been tested.
+Separate binaries target **Apple Silicon Macs, macOS 15 or newer**. Brown remains the primary, native host with its full integration. The Brown build targets **SDR++Brown 1.2.1, August 4, 2026 build**; the standard build targets **SDR++ 1.2.0, May 28, 2024 build**. Both are tested on macOS 26. Older macOS versions meeting the build target have not been tested.
 
-SDR++ forks do not provide a stable plugin ABI. A different Brown build may require rebuilding against its matching headers. Intel, Windows, Linux host plugins, upstream SDR++, and other forks are not currently validated. The standalone decoder tests can run without Brown.
+SDR++ forks do not provide a stable plugin ABI. Never interchange the two binaries. A different host build may require rebuilding against its matching headers. Intel, Windows, Linux host plugins and other forks are not currently validated. The standalone decoder tests need neither host.
 
-This is an independent community plugin, not an official SDR++Brown release. The binary is not Developer ID signed or notarized. If macOS or your host rejects it, build locally with matching headers; do not modify the host's signature or disable security protections.
+| Capability | SDR++Brown (primary) | Standard SDR++ |
+| --- | --- | --- |
+| CW/USB/LSB/DSB/AM full-filter capture, timing/recovery and reconnect | Full | Full |
+| Transcript, Markdown logs, archive/rename, selection and clipboard | Full | Full |
+| Explain with AI in default browser | Full | Full |
+| Receiver modulation and Use CW mode | Native Brown commands | Native SDR++ radio interface |
+| Location context | Brown's native My Grid | Optional Receiver grid in Decoder; press Enter to save |
+| Brown HTTP diagnostic/automation commands | Retained | Host has no equivalent HTTP server |
+
+Each host keeps its own logs and decoder preferences. Changing hosts does not move, erase or merge logs.
+
+This is an independent community plugin, not an official host release. The binaries are not Developer ID signed or notarized. If macOS or your host rejects one, build locally with matching headers; do not modify the host's signature or disable security protections.
 
 ## Install
 
@@ -49,19 +60,33 @@ This is an independent community plugin, not an official SDR++Brown release. The
 
 Python 3 is required; no Python packages are needed. The installer refuses to run while Brown is open and checks the binary architecture. It backs up the configuration and previous plugin, then installs outside the signed app bundle.
 
+### Standard SDR++ installation
+
+Use the **sdrpp** package and its included `cw_notebook.host.json`; the **brown** package is incompatible. Launch the matching SDR++ once, then quit it. From the extracted standard package run:
+
+```sh
+python3 scripts/install.py --host sdrpp --binary cw_notebook.dylib
+```
+
+Restart SDR++ and enable CW Notebook. The same decoding and log controls apply. The notebook continues updating when the host sidebar is hidden. For location in AI prompts, open Decoder, enter a Maidenhead grid and press Enter. An empty grid is reported as unconfigured.
+
+The installer checks the package's host manifest before changing files, refuses known profiles belonging to the other host, and preserves an existing disabled-plugin preference. Enable the module in Module Manager if an update finds it disabled. `--host brown` is the default; custom profiles still use `--config-dir`.
+
 - Plugin: `~/Library/Application Support/sdrpp-brown/plugins/cw_notebook.dylib`
 - Backups: `~/Library/Application Support/sdrpp-brown/cw-notebook-backups/`
 - Logs: `~/Documents/SDR++Brown/CW Logs/`
+
+For standard SDR++, the profile is `~/Library/Application Support/sdrpp/`, the plugin is in that profile's `plugins/` folder, and logs/preferences are `~/Documents/SDR++/CW Logs/`.
 
 For a custom Brown profile, add `--config-dir "/path/to/profile"`.
 
 ### Update or roll back
 
-Download a newer compatible release, quit Brown, and run the same installer. Your logs and decoder preferences remain. There is no automatic updater. Use GitHub's **Watch → Custom → Releases** to follow updates.
+Download a newer compatible release for your host, quit that host, and run the same installer with its matching host option. Your logs and decoder preferences remain. There is no automatic updater. Use GitHub's **Watch → Custom → Releases** to follow updates.
 
-To roll back, quit Brown and restore the previous `cw_notebook.dylib` from its dated backup. Restore the matching `config.json` only if needed; that also restores other settings to the backup time. Keep your current config copy first.
+To roll back, quit the selected host and restore its previous `cw_notebook.dylib` from the dated backup. Restore the matching `config.json` only if needed; that also restores other settings to the backup time. Keep your current config copy first.
 
-To uninstall, disable/remove the **CW Notebook** instance in Module Manager. With Brown closed, remove its absolute plugin path from the `modules` array in `config.json` and move only `cw_notebook.dylib` to Trash. Keep the logs.
+To uninstall, disable/remove the **CW Notebook** instance in Module Manager. With the selected host closed, remove its absolute plugin path from the `modules` array in that host's `config.json` and move only `cw_notebook.dylib` to Trash. Keep the logs.
 
 ## Receiving Morse
 
@@ -92,6 +117,7 @@ If receiver samples stop arriving, the plugin retries its private channel after 
 ### Limits
 
 - One signal at a time. This is not a band-wide skimmer.
+- On the tested older SDR++ 1.2.0 host, keep Radio's full filter within the captured RF spectrum. Extending it past an edge can trigger the host's spectrum bounds bug; see [validation](docs/validation.md).
 - Automatic timing defaults to 5-45 WPM. Manual speed and the extended range support 3-200 WPM in synthetic tests; this is not a guarantee for every real signal or sending style.
 - Learning buffers last for the current uninterrupted reception. Temporary storage does not survive a crash, restart or explicit reset. Disk failures are reported. Buffering cannot recover RF/audio samples missed before tone detection or during a stream interruption.
 - Fading, interference, weak signals and nonstandard timing can cause errors in either view. `[?]` marks unknown patterns.
@@ -118,7 +144,19 @@ ctest --test-dir build --output-on-failure
 python3 scripts/install.py
 ```
 
-The pinned headers match the supported August 4 host. For a different host, use its exact source revision and verify the ImGui ABI. Do not replace its bundled ImGui with a newer version.
+The pinned headers match the supported August 4 Brown host. Brown is the default `CW_HOST=brown`; its native event and commands remain intact. Standard SDR++ uses a separate build directory:
+
+```sh
+git clone https://github.com/AlexandreRouma/SDRPlusPlus.git ../SDRPlusPlus
+git -C ../SDRPlusPlus checkout 762444d3406d68fbc9d4dff8cc237d382793a6e3
+cmake -S . -B build-sdrpp -DCW_HOST=sdrpp \
+  -DSDRPP_SOURCE="../SDRPlusPlus" -DSDRPP_APP="/Applications/SDR++.app" \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+cmake --build build-sdrpp --parallel 4
+python3 scripts/install.py --host sdrpp --binary build-sdrpp/cw_notebook.dylib
+```
+
+For a different host revision, use its matching source and verify the ImGui ABI. Do not replace the host's bundled ImGui. Each build emits `cw_notebook.host.json` beside the binary.
 
 For core and installer tests without Brown:
 
@@ -129,7 +167,7 @@ sh scripts/check.sh
 ## Architecture
 
 ```text
-Brown IQ stream
+Host IQ stream (Brown or SDR++)
   → private IQ channel following Radio's full passband (8 kHz CW, 16/32/64 kHz otherwise)
   → map the selected passband to positive mono tones, preserving key timing
   → bounded audio queue

@@ -3,6 +3,7 @@
 #include "plugin.h"
 #include <core.h>
 #include <cstdlib>
+#include <cstdio>
 #include <fstream>
 #include <imgui_internal.h>
 #include <spawn.h>
@@ -11,13 +12,18 @@
 
 extern char** environ;
 SDRPP_MOD_INFO{"cw_notebook","CW decoder with recoverable Markdown logs","ReLLL",CW_VERSION_MAJOR,CW_VERSION_MINOR,CW_VERSION_PATCH,1};
-namespace {
-std::filesystem::path logFolder(){const char* home=std::getenv("HOME");return std::filesystem::path(home?home:".")/"Documents/SDR++Brown/CW Logs";}
-}
-CWNotebook::CWNotebook(std::string name):name_(std::move(name)),engine_(logFolder()){
+CWNotebook::CWNotebook(std::string name):name_(std::move(name)),engine_(cw::host::logFolder()){
+    auto grid=cw::host::grid(name_);std::snprintf(grid_,sizeof(grid_),"%s",grid.c_str());
     gui::menu.registerEntry(name_,[](void* ctx){static_cast<CWNotebook*>(ctx)->sidebar();},this,this);
+#if CW_HOST_BROWN
     drawHandler_={[](ImGuiContext*,void* ctx){static_cast<CWNotebook*>(ctx)->draw();},this};
     gui::mainWindow.onWaterfallDrawn.bindHandler(&drawHandler_);
+#else
+    // SDR++ has no Brown draw event. A context hook runs even with its sidebar hidden.
+    ImGuiContextHook hook;hook.Type=ImGuiContextHookType_EndFramePre;hook.UserData=this;
+    hook.Callback=[](ImGuiContext*,ImGuiContextHook* h){static_cast<CWNotebook*>(h->UserData)->draw();};
+    drawHook_=ImGui::AddContextHook(ImGui::GetCurrentContext(),&hook);
+#endif
     inputHandler_={[](ImGui::WaterFall::InputHandlerArgs,void* ctx){
         auto* self=static_cast<CWNotebook*>(ctx);
         auto p=ImGui::GetMousePos();
@@ -46,7 +52,11 @@ CWNotebook::CWNotebook(std::string name):name_(std::move(name)),engine_(logFolde
 }
 CWNotebook::~CWNotebook(){
     accept_=false;
+#if CW_HOST_BROWN
     gui::mainWindow.onWaterfallDrawn.unbindHandler(&drawHandler_);
+#else
+    ImGui::RemoveContextHook(ImGui::GetCurrentContext(),drawHook_);
+#endif
     gui::waterfall.onInputProcess.unbindHandler(&inputHandler_);
     sigpath::sinkManager.onStreamRegistered.unbindHandler(&registered_);
     sigpath::sinkManager.onStreamUnregister.unbindHandler(&unregistering_);
@@ -79,13 +89,7 @@ void CWNotebook::metadata(){
     bool changed=lastFrequency_!=0&&(std::abs(frequency-lastFrequency_)>.5||center!=lastCenter_||rate!=lastRate_);
     if(changed){engine_.command("retune",std::to_string(frequency));watchdog_.grace(ImGui::GetTime());}
     lastFrequency_=frequency;lastCenter_=center;lastRate_=rate;frequency_=frequency;
-    auto it=core::moduleManager.instances.find(streamName_);
-    std::string mode;
-    if(it!=core::moduleManager.instances.end() && it->second.instance){
-        try {auto j=json::parse(it->second.instance->handleDebugCommand("get_demod",""));
-            mode=j.value("demod","");
-        }catch(const json::exception&){}
-    }
+    std::string mode=cw::host::mode(streamName_);
     auto plan=cw::receiveChannel(mode,offset,hasVfo?sigpath::vfoManager.getBandwidth(streamName_):500,engine_.snapshot().amAudio);
     supportedMode_=plan.supported;followsBandwidth_=plan.supported;
     bool modeChanged=mode!=mode_;
@@ -144,7 +148,7 @@ std::string CWNotebook::handleDebugCommand(const std::string& cmd,const std::str
             {"channel_offset_hz",channelOffset_},{"sample_rate",sampleRate_.load()},
             {"carrier_offset_hz",channel_.carrierOffset(s.decoder.tone)},{"supported_mode",supportedMode_},
             {"blocks",s.blocks},{"dropped",s.dropped},{"saved",s.saved},{"paused",s.paused},{"autosave",s.autosave},
-            {"level",s.decoder.level},{"threshold",s.decoder.threshold},{"contrast_db",s.decoder.snr},{"input","IQ"},{"version",CW_VERSION_STRING},
+            {"level",s.decoder.level},{"threshold",s.decoder.threshold},{"contrast_db",s.decoder.snr},{"input","IQ"},{"version",CW_VERSION_STRING},{"host",cw::host::name},
             {"manual_wpm",s.manualWpm},{"manual_tone",s.manualTone},{"am_audio",s.amAudio}}.dump();
     }
     if(cmd=="reconnect"){accept_=false;select(streamName_);watchdog_.grace(ImGui::GetTime());++reconnects_;metadata();return "{\"status\":\"reconnected\"}";}

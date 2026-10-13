@@ -13,10 +13,7 @@ void CWNotebook::explainWithAI(int provider){
     context.frequency=frequency_;context.bandwidth=bandwidth_;context.wpm=d.wpm;
     context.carrierOffset=channel_.carrierOffset(d.tone);context.mode=mode_+(channel_.amAudio?" (audio tones)":"");
     context.recovered=showRecovery_;context.manualSpeed=s.manualWpm>0;context.timestamp=std::time(nullptr);
-    core::configManager.acquire();
-    if(core::configManager.conf.contains("operatorLocation")&&core::configManager.conf["operatorLocation"].is_string())
-        context.grid=core::configManager.conf["operatorLocation"].get<std::string>();
-    core::configManager.release();
+    context.grid=cw::host::grid(name_);
     auto prompt=cw::analysisPrompt(text,context);auto handoff=cw::browserHandoff(provider,prompt);
     ImGui::SetClipboardText(prompt.c_str());
     pid_t pid;char* args[]={const_cast<char*>("/usr/bin/open"),handoff.url.data(),nullptr};

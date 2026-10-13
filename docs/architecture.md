@@ -4,6 +4,12 @@ read_when: Changing decoding, host integration, threading, or log persistence
 
 # Architecture
 
+## Host integration
+
+Brown is the primary compile-time target (`CW_HOST=brown`). Its existing onWaterfallDrawn event, native get_demod/set_demod commands, operatorLocation and HTTP command override remain unchanged. The standard target (`CW_HOST=sdrpp`) uses ModuleComManager's radio interface for mode reading and Use CW mode. Its EndFramePre ImGui hook updates the notebook even when the sidebar is hidden, and is removed before module destruction. Each binary links only to its selected host's core and bundled VOLK, using matching headers and ImGui.
+
+Both targets share the decoder, IQ capture, UI, recovery, file worker, watchdog and browser handoff. Their log/preference folders are separate. Standard SDR++ lacks Brown's HTTP server and native location field; an optional grid is saved within the notebook's module instance. Upstream removes unknown top-level configuration keys, so plugin settings never add them. Package manifests and installer checks reject the other host's binary/profile before mutations; updates preserve instance settings and intentional disablement.
+
 The plugin creates a private IQFrontEnd channel following Radio's full passband. CW retains its 8 kHz input, centered filter and 800 Hz mono representation. Other supported modes use 16 kHz input for widths up to 6 kHz, 32 kHz up to 12 kHz and 64 kHz for wider AM filters, covering the tested Brown build's full 12 kHz sideband and 15 kHz AM ranges. USB selects above the dial, LSB below it and DSB/AM around it. LSB conjugates the complex signal; keyed-carrier paths shift the complete passband above 200 Hz before converting to real samples, preventing opposite frequencies from folding onto each other. AM audio-tone input instead extracts the magnitude envelope and removes carrier DC with a 50 Hz high-pass. Its audio pitch does not identify an RF carrier offset. This uses the host's bundled VOLK library; no extra waterfall cursor is created. One worker performs decoding, logging and file commands. The GUI takes a snapshot; disk operations never run in the GUI or stream callback.
 
 An initial audio-stream implementation failed installed-host testing because Brown's CW AGC raised gaps and distorted the amplitude keying. The direct IQ path avoids that dependency and keeps speaker settings untouched.

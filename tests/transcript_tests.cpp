@@ -69,5 +69,22 @@ int main(){try{
         "Reopened window remained outside visible area");
     require(GImGui->NavWindow==notebook,"Reopened window was not focused");
     require(GImGui->Windows.back()==notebook,"Reopened window was not brought to front");
+    // Standard SDR++ lacks Brown's draw event. Draw during EndFramePre with
+    // no sidebar/main window, then remove the hook before module destruction.
+    struct HookView {TranscriptView view;std::string text="CQ DE HOOK";bool follow=true;int frames=0;} hooked;
+    ImGuiContextHook hook;hook.Type=ImGuiContextHookType_EndFramePre;hook.UserData=&hooked;
+    hook.Callback=[](ImGuiContext*,ImGuiContextHook* h){
+        auto& v=*static_cast<HookView*>(h->UserData);++v.frames;
+        ImGui::Begin("Hook transcript");v.view.draw(v.text,200,1,v.follow);ImGui::End();
+    };
+    auto hookID=ImGui::AddContextHook(ImGui::GetCurrentContext(),&hook);
+    ImGui::NewFrame();ImGui::Render();hooked.text+=" NEXT";
+    ImGui::NewFrame();ImGui::Render();
+    require(hooked.frames==2,"SDR++ frame hook did not draw without a sidebar");
+    hooked.view.copyReport(7020000,20,0,false);
+    require(clipboard.find("HOOK NEXT")!=std::string::npos,"Frame-hook transcript failed to refresh");
+    ImGui::RemoveContextHook(ImGui::GetCurrentContext(),hookID);
+    ImGui::NewFrame();ImGui::Render();
+    require(hooked.frames==2,"Removed frame hook still invoked destroyed-module callback");
     ImGui::DestroyContext();std::cout<<"Transcript refresh and window presentation checks passed\n";
 }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

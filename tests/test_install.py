@@ -43,6 +43,32 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(self.config.read_text(), '{"modules": "bad"}')
         self.assertFalse((self.root / "plugins").exists())
 
+    def test_separate_host_profiles_and_disabled_preference(self):
+        self.binary.with_suffix(".host.json").write_text('{"host":"sdrpp","version":"1.0.35"}')
+        original = self.config.read_bytes()
+        with self.assertRaises(ValueError):
+            installer.install(self.binary, self.root, "brown")
+        self.assertEqual(self.config.read_bytes(), original)
+        self.assertFalse((self.root / "cw-notebook-backups").exists())
+        installer.install(self.binary, self.root, "sdrpp")
+        data = json.loads(self.config.read_text())
+        data["moduleInstances"]["CW Notebook"]["enabled"] = False
+        data["moduleInstances"]["CW Notebook"]["receiverGrid"] = "KM69"
+        self.config.write_text(json.dumps(data))
+        installer.install(self.binary, self.root, "sdrpp")
+        self.assertFalse(json.loads(self.config.read_text())["moduleInstances"]["CW Notebook"]["enabled"])
+        self.assertEqual(json.loads(self.config.read_text())["moduleInstances"]["CW Notebook"]["receiverGrid"], "KM69")
+
+    def test_standard_host_requires_manifest_and_correct_profile(self):
+        with self.assertRaises(ValueError):
+            installer.install(self.binary, self.root, "sdrpp")
+        self.binary.with_suffix(".host.json").write_text('{"host":"sdrpp"}')
+        with self.assertRaises(ValueError):
+            installer.validate_host(self.binary, "sdrpp", self.root / "sdrpp-brown")
+        self.binary.with_suffix(".host.json").write_text('[]')
+        with self.assertRaises(ValueError):
+            installer.install(self.binary, self.root, "sdrpp")
+
     def test_config_failure_restores_previous_plugin(self):
         installer.install(self.binary, self.root)
         previous = self.config.read_bytes()

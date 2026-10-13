@@ -4,7 +4,7 @@ Everyone is welcome to report bugs, propose improvements, submit pull requests o
 
 ## Report a problem
 
-Include the plugin version, Brown build/source revision, OS and CPU architecture, receiver, mode, approximate signal speed, relevant settings, and steps to reproduce. Explain expected and actual behavior. Remove personal paths, station logs and sensitive content before posting. Do not upload raw recordings unless you have the right to share them.
+Include the plugin version, host (SDR++Brown or SDR++), host build/source revision, OS and CPU architecture, receiver, mode, approximate signal speed, relevant settings, and steps to reproduce. Explain expected and actual behavior. Remove personal paths, station logs and sensitive content before posting. Do not upload raw recordings unless you have the right to share them.
 
 ## Make a change
 
@@ -20,7 +20,7 @@ Include the plugin version, Brown build/source revision, OS and CPU architecture
    ctest --test-dir build-sanitize --output-on-failure
    ```
 
-6. Build and test host changes against the documented Brown revision. Verify tuning, selection, clipboard, log recovery and restart behavior.
+6. Build and test host changes against both documented host revisions. Brown remains the primary native target. Verify tuning, selection, clipboard, log recovery and restart behavior; keep binaries and profiles separate.
 7. Open a pull request explaining the problem, change, validation and any compatibility limits.
 
 Use your preferred public identity in commits. Do not add personal recordings or local configuration to the repository. Credit upstream work and retain its license notices.

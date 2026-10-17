@@ -3,6 +3,7 @@
 #pragma once
 #include <filesystem>
 #include <string>
+#include "rtty_selection.h"
 namespace cw::host {
 #if CW_HOST_BROWN
 inline constexpr bool brown=true;
@@ -16,4 +17,9 @@ std::string mode(const std::string& receiver);
 void useCW(const std::string& receiver);
 std::string grid(const std::string& instance);
 bool setGrid(std::string value,const std::string& instance);
+bool rttyEnabled(const std::string& instance);
+void setRttyEnabled(const std::string& instance,bool enabled);
+rtty::Selection rttySelection(const std::string& instance);
+void setRttySelection(const std::string& instance,const rtty::Selection& selection);
+bool listenRTTY(const std::string& receiver,double mark);
 }

@@ -22,6 +22,12 @@ The CW decoder downsamples to 4 kHz after two low-pass stages and retains its 10
 
 Browser analysis is an explicit GUI action. A portable prompt builder formats the current snapshot and configured grid, preserves the displayed text and labels uncertainty. URL encoding is byte-safe, and oversized URLs fall back to the complete clipboard prompt. The GUI launches the default browser through argv-based `posix_spawn`, never a shell, API client or account automation. AI popup gestures share the existing waterfall input guard.
 
+RTTY tabs share that same browser launcher. Their prompt builder uses the tab's
+displayed compact/original view and reception report, with RTTY baud/shift/polarity
+and estimated mark frequency rather than CW speed or Radio's unrelated dial.
+The provider menu participates in the notebook popup/input guard. Prompt creation
+and browser launch happen only after an explicit provider choice.
+
 The detector is deterministic. No language model or word dictionary fills in missing characters. Signal status and WPM are estimates, not probabilities. A continuous carrier cannot produce valid text.
 
 Ordinary 5-45 WPM acquisition uses a 90 Hz tone-envelope low-pass cutoff and 6 ms edge debounce. This is an internal noise filter after tone selection, separate from Radio's selected channel width. Extended-speed acquisition retains 200 Hz and 2 ms. The ordinary amplitude gate requires three times the estimated noise envelope and a peak above four times noise; the extended path and manual speeds outside 5-45 retain the earlier five/six-times gates. Tone lock, hysteresis and the absolute peak floor remain required. The previous ordinary gate fragmented weak but audible dashes, leading to false fast timing or indefinite learning.
@@ -38,7 +44,12 @@ The same worker runs two detectors on each packet. The original disables timing 
 
 Once timing is calibrated, the recovery detector uses a peak-memory time constant of 1.5 dot units, bounded to 30-300 ms, instead of the original fixed roughly 333 ms. This prevents a loud character's peak from masking a following attenuated dot. Acquisition, noise-floor multipliers, tone-lock requirements and debounce limits are unchanged. The original detector keeps its earlier threshold behavior; the recovery checkbox controls the alternative. Tests use abrupt attenuation and varied letters/digits, without station-specific logic.
 
-The window has Transcript, Decoder and How to use tabs, a shared live status and one log toolbar. Report copying reads the worker snapshot even when the transcript tab is hidden. The log menu participates in the same waterfall input guard as transcript popups.
+The window has a permanent CW tab and optional RTTY frequency tabs. CW Settings,
+How to use and the RTTY signal picker open as modals from the shared toolbar.
+CW's log toolbar remains inside its tab. Report copying reads the worker snapshot
+even when the transcript is hidden. Modal cleanup on disable/destruction closes
+only this notebook's popups, preserving other plugins' dialogs and host input.
+The log menu participates in the same waterfall input guard as transcript popups.
 
 There is no vocabulary suggestion or substitution stage. Markdown saves original chunks and differing recovery chunks. The retired vocabulary preference slot is read and ignored, and written as zero for compatibility with older settings files.
 
@@ -63,6 +74,20 @@ Every duration-fit candidate is rejected if two or more recent marks exceed 4.3 
 Ordinary tracking stays within 0.7-1.4 times the current unit. A separate candidate search can escape that range only with 16 recent marks, at least three dots and three dashes, at least six compatible inner gaps, 90% mark support and mean bounded mark loss no greater than 0.12. Four agreeing updates from distinct completed marks must agree within 12%. The change occurs after a gap longer than 2.2 times both timing units, following completion of the current character. This corrects a false startup lock or a sustained operator-speed change without replacing earlier text. Manual speed changes clear any pending automatic correction; manual locks never run the candidate search.
 
 ## Boundaries
+
+Optional RTTY uses a separate full-capture subscription and a bounded single
+worker. It shares no decoder state or log queue with CW. Reception tabs, format
+coverage, discovery/framing gates, lifecycle and overload limits are documented
+in [RTTY monitor](rtty.md). CW remains a one-channel Morse decoder.
+
+GUI metadata publishes Radio's RF passband as an independent RTTY priority
+update. The worker applies the latest bounds without resetting unrelated
+channels or changing the raw subscription. The tuned region gets local noise
+measurement, reserved slots within the existing spectral-peak budget and first
+decoder allocation, followed by manual pins and automatic candidates. Explicit
+ignore/Only pinned filters remain authoritative. The worker snapshot reports
+the region, tuned decoder count and actual receiving state. This adds no DSP
+thread, wide FFT, input packet pool or decoder slot.
 
 Retuning, sample-rate changes and dropped-audio resets mark a pending line boundary without adding text. The next decoded character follows exactly one newline after trimming trailing whitespace from the preceding text. Silence and repeated resets cannot accumulate blank lines or start an empty transcript with whitespace. Normal Morse word gaps and message paragraph breaks remain intact within a reception run.
 

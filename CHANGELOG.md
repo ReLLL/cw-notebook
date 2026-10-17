@@ -1,5 +1,86 @@
 # Changelog
 
+## 1.0.42 - 2026-10-17
+
+First public RTTY release, incorporating the local 1.0.36-1.0.41 builds below.
+
+- Add Explain with AI to each RTTY tab, matching CW's ChatGPT/Claude/Gemini
+  menu. Share the displayed compact/original text with RTTY frequency, band,
+  baud, shift, polarity, time and receiver context. Copy the full prompt for
+  every provider; use clipboard fallback for long transcripts and Gemini.
+- Decode simultaneous RTTY streams across the captured spectrum in frequency
+  tabs. Prioritize all eligible streams in Radio's selected passband, then
+  manual pins and other candidates, within the existing 16-decoder budget.
+- Include 170/200/425/450/850 Hz shifts, 45.45/50/75/100 baud and both polarities.
+  Keep green tab activity for one minute; returning activity restarts the timer.
+- Add independent CW/RTTY controls, stable signal selection, pins/ignores,
+  metadata copying, optional compact RY display, modal help/settings and a
+  fixed status bar. Keep CW decoding and Markdown logging unchanged.
+- Keep project instructions local through .gitignore; remove AGENTS.md from
+  the published tree. Existing Git history is retained.
+
+## 1.0.41 (unreleased local candidate)
+
+- Automatically prioritize all eligible RTTY pairs inside Radio's current
+  passband, following frequency, mode and filter width. Keep scanning the
+  entire capture with the same 16-decoder budget. Saved pins come next;
+  explicit ignores and Only pinned remain effective.
+- Reserve part of discovery's existing peak budget for the tuned passband,
+  estimate its noise locally, and retry its candidates without cooldown gaps.
+  Existing framing and repeated-letter rejection checks are unchanged.
+- Keep each RTTY tab's circle green for one minute after confirmed activity.
+  Returning activity restarts the full minute; inactive tabs age to yellow.
+
+## 1.0.40 (unreleased local candidate)
+
+- Add exact 200 Hz RTTY shift detection alongside 170/425/450/850 Hz, including
+  remembered pins and ignores. Keep 170 Hz and 200 Hz selections distinct.
+- Extend format, full-spectrum and simultaneous-signal regression coverage.
+- Let a substantially stronger signal replace an unconfirmed automatic
+  candidate when the decoder budget is full. Keep confirmed streams and pins.
+
+## 1.0.39 (unreleased local candidate)
+
+- Add independent CW and RTTY checkboxes at the start of the notebook toolbar.
+  CW uses the existing pause/resume control and retains text and logs. Replace
+  the duplicate Pause/Resume button with a visible CW off state.
+
+## 1.0.38 (unreleased local candidate)
+
+- Require varied payload evidence or a sustained alternating RY test before
+  confirming a new RTTY stream. Periodic I/P-heavy patterns with occasional
+  other letters no longer qualify on framing alone.
+- Hold the chosen baud/polarity trial after acquisition; reacquire through the
+  existing gap/stall lifecycle instead of replacing text with another trial.
+- Replace Copy raw RTTY text with Copy to clipboard. Reports include the current
+  displayed view, date/day/time zone, band range, estimated mark/pair frequencies,
+  baud, shift, polarity, reception state and capture/gap metadata.
+
+## 1.0.37 (unreleased local candidate)
+
+- Hold Signals rows and checkbox targets steady until Refresh list, while
+  continuing to update signal states. Retain saved ignored frequencies too.
+- Add filled green/yellow circles before RTTY frequencies: green for five
+  seconds after new decoded text, yellow otherwise, including inactive tabs.
+- Move changing notices into a fixed status bar flush with the window edges.
+  Add explanatory hover help to notebook controls.
+- Fold exact long RY test sequences in an optional Compact RY display. Preserve
+  the original reception and provide Copy raw RTTY text.
+- Default Monitor RTTY on for profiles without a saved choice; honor saved off.
+
+## 1.0.36 (unreleased local candidate)
+
+- Add an optional full-capture RTTY monitor with shared FFT channel extraction,
+  bounded simultaneous decoding and conservative automatic framing checks.
+- Keep CW in a permanent tab; give RTTY streams frequency tabs, unread markers,
+  independent Follow/copy controls and one-click Close all tabs.
+- Preserve CW decoding and Markdown logging. RTTY text is currently memory-only.
+- Add deterministic multi-station, format, noise, capacity, gap and close tests.
+- Add remembered signal priorities, Only pinned decoding, ignored frequencies,
+  explicit safe Radio listening, and a compact Signals picker for crowded bands.
+- Refresh the notebook with a scoped graphite/brass theme and modal CW Settings
+  and How to use windows; preserve the host's own theme and transcript behavior.
+
 ## 1.0.35 - 2026-10-13
 
 - Add a separate standard SDR++ macOS build, retaining Brown as the primary native target. Keep all Brown receiver controls, UI event integration and HTTP automation.

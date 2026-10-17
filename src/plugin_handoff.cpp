@@ -14,7 +14,10 @@ void CWNotebook::explainWithAI(int provider){
     context.carrierOffset=channel_.carrierOffset(d.tone);context.mode=mode_+(channel_.amAudio?" (audio tones)":"");
     context.recovered=showRecovery_;context.manualSpeed=s.manualWpm>0;context.timestamp=std::time(nullptr);
     context.grid=cw::host::grid(name_);
-    auto prompt=cw::analysisPrompt(text,context);auto handoff=cw::browserHandoff(provider,prompt);
+    openAnalysisPrompt(provider,cw::analysisPrompt(text,context));
+}
+void CWNotebook::openAnalysisPrompt(int provider,const std::string& prompt){
+    auto handoff=cw::browserHandoff(provider,prompt);
     ImGui::SetClipboardText(prompt.c_str());
     pid_t pid;char* args[]={const_cast<char*>("/usr/bin/open"),handoff.url.data(),nullptr};
     aiNoticeAt_=ImGui::GetTime();

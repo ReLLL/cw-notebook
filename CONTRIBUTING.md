@@ -9,7 +9,7 @@ Include the plugin version, host (SDR++Brown or SDR++), host build/source revisi
 ## Make a change
 
 1. Fork the repository and create a focused branch.
-2. Read `AGENTS.md` and `docs/architecture.md`.
+2. Read `docs/architecture.md` and, for RTTY changes, `docs/rtty.md`.
 3. Keep DSP and file operations out of the GUI thread; keep queues bounded and logs recoverable.
 4. Add a regression test for behavioral fixes. Preserve normal Morse spacing and report uncertainty without fabricating text.
 5. Run `sh scripts/check.sh`. For memory checks:

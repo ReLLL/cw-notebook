@@ -4,6 +4,7 @@
 #include <imgui.h>
 #include <string>
 #include <vector>
+namespace rtty {struct Station;struct Status;}
 
 // GUI-thread-only view. Selection and scrolling never pause incoming text.
 class TranscriptView {
@@ -12,7 +13,9 @@ public:
     void clear();
     void copyAll(const std::string& text);
     void copyReport(double frequency, float wpm, float carrierOffset, bool manualSpeed,bool recovered=false,const std::string* currentText=nullptr);
+    void copyRTTYReport(const rtty::Station& station,const rtty::Status& capture,bool compact);
     bool popupOpen() const { return popupOpen_; }
+    void hidden(){popupOpen_=false;}
 private:
     static int selectionCallback(ImGuiInputTextCallbackData* data);
     void update(const std::string& text, float width);

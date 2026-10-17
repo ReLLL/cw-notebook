@@ -7,6 +7,9 @@
 #include "receive_channel.h"
 #include "ai_handoff.h"
 #include "host_adapter.h"
+#include "rtty_receiver.h"
+#include "rtty_signal_list.h"
+#include <map>
 #include <module.h>
 #include <gui/gui.h>
 #include <dsp/sink/handler_sink.h>
@@ -35,10 +38,38 @@ private:
     static void audio(dsp::complex_t* samples,int count,void* ctx);
     void openPath(const std::string& path,bool reveal);
     void explainWithAI(int provider);
+    void openAnalysisPrompt(int provider,const std::string& prompt);
     void logControls(const cw::Snapshot& s);
     void decoderControls(const cw::Snapshot& s);
+    void cwStatus(const cw::Snapshot& s);
+    void rttyControls();
+    void receiveStatus(const cw::Snapshot& s);
+    void rttyTabs(float footer);
+    void setRttyMonitoring(bool enabled);
+    void saveRttySelection();
+    void pinRtty(double center,double shift,bool pin);
+    void ignoreRtty(double center,double shift,bool ignore);
+    void signalPicker();
+    void notebookModals(const cw::Snapshot& s);
+    void operatingGuide();
+    void openNotebookModal(int modal);
+    void listenRtty(double mark);
     std::string name_,streamName_="Radio";
     cw::Engine engine_;
+    std::unique_ptr<RttyReceiver> rtty_;
+    struct RttyView {TranscriptView transcript;bool follow=true,compact=true;std::string seen,rawCache,compactCache;};
+    std::map<uint64_t,RttyView> rttyViews_;
+    bool rttyEnabled_=false;
+    bool selectCW_=false;
+    bool cwSettingsOpen_=false,helpOpen_=false,signalsOpen_=false;
+    rtty::Selection rttySelection_;
+    rtty::SignalList signalList_;
+    std::string rttyNotice_;
+    std::atomic<int> pendingRttyEnable_{-1};
+    std::atomic<int> pendingModal_{0};
+    std::atomic<double> pendingRttyListen_{0};
+    std::atomic<bool> pendingRttyCloseAll_{false},rttyEnabledView_{false};
+    std::shared_ptr<const rtty::Status> rttyStatus_=std::make_shared<const rtty::Status>();
     TranscriptView transcript_;
     cw::StreamWatchdog watchdog_;
     std::atomic<uint64_t> inputBlocks_{0};

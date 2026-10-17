@@ -4,6 +4,204 @@ read_when: Changing thresholds, supported ranges, compatibility, or reliability 
 
 # Validation
 
+## 1.0.42 RTTY AI handoff, 2026-10-17
+
+All nine core targets, five installer tests, nine ASan/UBSan targets and both
+matching real-ImGui suites pass. Both host modules build. Handoff tests cover
+compact and original RTTY text, reception metadata, optional receiver grid,
+all three providers and long-prompt clipboard fallback. Tab frequency remains
+distinct from the current capture, and RTTY prompts contain no CW speed claim.
+
+Installed Brown 1.0.42 displays the RTTY Explain with AI button and its ChatGPT,
+Claude and Gemini menu, including clipboard fallback instructions. The menu was
+opened and dismissed without selecting a provider or sharing live reception.
+The installed binary matches the tested build. Existing CW log prefixes remain
+byte-for-byte intact; pre-update RTTY text was exported privately before restart.
+This AI addition changes no decoder thresholds or DSP.
+
+## Local 1.0.41 tuned priority and activity, 2026-10-17
+
+All nine core targets, five installer tests, nine ASan/UBSan targets and both
+matching real-ImGui suites pass. Both host modules build. A 20-station fixture
+first fills all 16 decoders outside a new priority region. Moving priority admits
+all three tuned pairs on the next discovery pass (checked within 0.3 seconds),
+decodes their messages together and retains 13 other decoders. Retuning priority
+admits the new pair without deleting prior tab text. Ignore and Only pinned
+continue to override eligibility.
+
+A separate fixture contains over 256 stronger steady carriers plus one weaker
+200 Hz RTTY stream. The ordinary global peak budget excludes that stream; tuned
+priority retains it and decodes the message. This tests a specific discovery
+failure, not universal weak-signal sensitivity. Existing ambiguity checks also
+run with tuned priority for repeated I/P patterns at 170 and 200 Hz. They still
+produce no tabs. Framing, format trials and payload qualification are unchanged.
+
+Pure passband tests cover USB/LSB reference direction, centered AM/CW/DSB/FM
+filters, invalid widths, capture clipping and requiring both tones inside the
+priority region. Worker updates are tested without input. Activity tests cover
+the complete 60-second window, expiry and a returning burst restarting the
+window; native ImGui tests retain tab colors and stable status-bar geometry.
+
+During live inspection, the installed host's playback HTTP endpoint reported
+false while the native GUI showed reception and RTTY processing time advanced.
+The plugin's immutable RTTY status now reports the worker's actual receiving
+state, avoiding reliance on that host endpoint. No host code or signature changed.
+The observed 7045 kHz snapshot had no RTTY input drops or capacity limit, so
+priority alone is not established as the cause of every missed/slow field decode.
+
+Installed Brown 1.0.41 reports receiving normally, with priority bounds matching
+the latest saved LSB dial and filter width. It was resumed after the update.
+Saved host settings and existing CW log bytes were verified preserved; all
+three pre-update RTTY tabs were exported privately before restart. The installed
+binary and both host packages match their tested builds. No improved on-air
+accuracy or universal acquisition-time claim is made.
+
+## Local 1.0.40 exact 200 Hz shift, 2026-10-16
+
+Exact 200 Hz is now part of automatic pair discovery and validated saved signal
+choices. The earlier shift list failed to discover the new 200 Hz fixture.
+All 40 baud/shift/polarity decoder combinations pass, as do full-scanner 200 Hz
+checks in both polarities at 8 kS/s, 96 kS/s and 4.096 MS/s. Four simultaneous
+signals at 96 kS/s and 1.024 MS/s include separate 170 and 200 Hz streams.
+Selection validation retains 200 Hz pins/ignores and distinguishes 170 Hz.
+
+Adding the preset initially broke the existing five-second 850 Hz capture-edge
+fixture at 2.4 MS/s. A comparison using the old discovery list passed. A targeted
+trace showed weak 200 Hz modulation sideband pairs occupying all 16 decoder
+slots before the real 850 Hz pair appeared. A pair with over four times the
+weaker-tone power can now displace the weakest unconfirmed, unpinned automatic
+candidate. This restores the original fixture without changing its duration or
+text requirement. Confirmed decoders and pins retain their existing protection;
+the decoder budget and worker count are unchanged. Trace code stayed outside
+the source tree and temporary probes were moved to Trash.
+
+All nine core tests, five installer tests, nine ASan/UBSan tests and both
+matching real-ImGui suites pass. Separate repeated I/P fixtures at 170 and
+200 Hz produce no tabs in Release and sanitizer runs. Both host modules build.
+These controlled fixtures do not establish an on-air error rate or guarantee
+detection of weak, overlapping or nonstandard signals. CW DSP is unchanged.
+
+Brown's installed 1.0.40 binary and both packaged host binaries match the tested
+builds byte-for-byte. The normal profile's settings outside module registration
+were unchanged, and previously saved CW log bytes were verified preserved.
+The native operating guide visibly lists 200 Hz. No on-air 200 Hz reception
+was established during this installation check.
+
+## Local 1.0.39 decoder controls, 2026-10-16
+
+The toolbar now starts with independent CW and RTTY checkboxes. CW maps to the
+existing worker pause command; no decoder algorithms or stream lifecycle changed.
+The duplicate Pause/Resume button was removed. All nine core tests, five installer
+tests and both matching real-ImGui suites pass, and both host modules build.
+
+In the installed Brown candidate, clicking CW off set the worker's paused state,
+showed CW off, and left RTTY enabled. Clicking it on cleared the paused state.
+The hover explanation and checkbox order were verified in the native window.
+The receiver remained stopped throughout; this check does not claim new on-air
+reception results. Existing CW log hashes were unchanged. The installed binary
+and both host packages match their tested builds, with AGENTS.md excluded.
+
+## Local 1.0.38 acquisition and clipboard fix, 2026-10-16
+
+Both host modules build. All nine core tests, five installer tests, nine
+ASan/UBSan tests and both matching real-ImGui suites pass. The final Brown
+candidate is installed outside the signed host bundle. Existing CW file contents
+were verified preserved; pre-update RTTY text was exported privately. Reception
+was stopped before updating and remains stopped. No new on-air error-rate or
+universal-detection claim is made.
+
+The original live receiver had I/P-heavy tabs, including long I runs with rare
+U/C/P/W characters. A deterministic repeated-symbol fixture reproduced the
+false confirmation. Expanded native replay also exposed weaker interpretations
+that turned those blocks into mixed letters/figures, bypassing a simple
+single-character check. The final acquisition gate requires sustained character
+variety and transitions, plus framing; the strongest framing trial must qualify.
+Once acquired, the chosen baud/polarity remains fixed until normal reacquisition.
+Confirmed text is never filtered or corrected.
+
+The regression includes rare other letters, spaces, CR/LF, stereo signed-16 IQ,
+four simultaneous streams and repeated discontinuities. It rejects the two
+ambiguous streams while retaining both message streams. All 32 supported format
+combinations are checked during acquisition, and pure RY tests acquire within
+the four-second candidate lifetime. Legitimate repeated I/P text following
+qualified reception remains intact. An isolated native Brown four-signal replay
+also retained exactly the two message streams and no I/P-heavy tabs. This proves
+the tested cases, not every possible false signal or the physical origin of the
+live interference.
+
+Copy to clipboard reports are checked for date/day/time zone, band, estimated
+mark and pair-center frequencies, baud, shift, polarity, receiving state and
+current capture/gap metadata. Both original and compact-RY views are covered;
+the report labels which view was copied and the time of copying. Real-ImGui
+clipboard tests use the actual report-copy method for both matching hosts.
+
+## Local 1.0.37 UX follow-up, 2026-10-16
+
+Both host modules build. Nine core tests and five installer tests pass; all nine
+core tests also pass under ASan/UBSan. Both matching real-ImGui suites pass,
+including activity dots on inactive tabs, both dot colors, fixed tab positions
+under changing status text, and a footer touching the window edges. The existing
+CW transcript, selection and modal cleanup regressions remain passing.
+
+The Signals regression first reproduced live snapshots removing a row between
+checkbox press and release. The UI now uses a held list; discovery changes and
+frequency drift cannot change targets until explicit refresh. Tests cover refresh,
+saved pins/ignores and in-place matching. Presentation tests cover the five-second
+activity deadline and exact RY folding without editing the original input.
+
+An isolated native Brown replay with no saved RTTY preference enabled monitoring
+by default and decoded two simultaneous 50-baud streams (170/450 Hz, opposite
+polarities). Native screenshots confirm the flush footer and stable signal picker.
+The test profile and synthetic reception are separate from normal logs.
+
+A deterministic 120-second deep-fade/noise fixture retained one baud/polarity
+choice without replacing earlier displayed text; it still lost characters during
+fades. No DSP thresholds or CW algorithms were changed for this UI fix. The live
+receiver also reported intermittent input gaps. RY compaction improves reading,
+not reception accuracy; it does not repair or invent missing text.
+
+## Local 1.0.36 RTTY candidate, 2026-10-15
+
+Both matching Apple Silicon host modules build. All eight native decoder/core
+tests and five installer tests passed, as did the full eight-test ASan/UBSan
+suite. The final RTTY-only sanitizer rerun includes selection under capacity
+pressure and 425/450 Hz reacquisition without duplicate tabs or replacing earlier
+confirmed text. Both real-ImGui suites passed transcript refresh/selection,
+hook removal, scoped theme restoration and modal cleanup that leaves another
+plugin's modal intact.
+
+Isolated actual Brown and standard SDR++ replays decoded three simultaneous
+RTTY streams outside Radio's 400 Hz CW passband while CW decoded
+`CQ CQ DE TEST 123 K`. The controlled source used 96 kS/s complex IQ, a 20 WPM
+center carrier, and RTTY pairs at -18 kHz (45.45 baud/170 Hz), +21 kHz
+(50 baud/425 Hz, reversed) and +44 kHz (75 baud/850 Hz). CW's startup prefix
+sometimes read `TVV`, consistent with the earlier baseline; no perfect startup
+transcription is claimed. The portable 1.024 MS/s fixture verifies wider capture.
+
+Brown's saved Only pinned configuration restored one decoder/tab while other
+pairs remained discoverable. The native Tune Radio action selected USB/3.2 kHz
+and the expected dial with mark at 2125 Hz, preserving CW text and the RF capture
+center. A request whose full passband would cross the capture edge was rejected.
+Native Close all removed every RTTY tab without clearing the paused CW
+transcript. Settings, help and signal-picker modals rendered at 740 by 600 in
+the isolated 1280 by 850 viewport. Existing normal profiles and logs were not
+used as replay destinations.
+Disabling the actual Brown module with its signal-picker modal open released
+host input; re-enabling resumed the pinned decoder. That short resume check
+reported zero input gaps. All owned replay writers were stopped and the test
+fixture, profiles and CW logs were removed from their temporary location after
+validation. Only aggregate checks and UI screenshots were retained privately.
+
+Capture/queue gaps can occur under load; the monitor reports them and resets
+affected acquisition. Resource bounds are 16 simultaneous candidate decoders,
+32 tabs, 250 ms queued IQ and 4.096 MS/s maximum input. Tests demonstrate
+controlled decoding and integration, not universal detection, on-air accuracy,
+or a months-long soak. RTTY text remains memory-only. This candidate is local,
+unpublished and not installed into the normal receiver profiles.
+
+Detailed behavior, selection controls and performance measurements:
+[RTTY monitor](rtty.md).
+
 ## Local 1.0.35 host compatibility checks, 2026-10-13
 
 Brown keeps its native receiver commands, draw event and HTTP override. Standard SDR++ uses the radio interface and an EndFramePre hook; real-ImGui regression tests passed against both pinned host revisions, including drawing without a sidebar, continued transcript delivery and removing the hook before destruction. Installer tests cover wrong-host rejection without changes, separate profiles, retained grid/disabled preferences and rollback.
@@ -17,6 +215,12 @@ Both matching binaries were installed outside the signed app bundles and verifie
 Standard SDR++ restarted successfully with its normal RTL-SDR profile, CW Notebook visible, the previous 6.988 MHz LSB dial and 3281 Hz filter, receiver stopped and Ankara's coarse KM69 grid visible in Decoder. Brown's native location remains unchanged. Package inspection verified eight allowlisted files per ZIP, matching binary/manifest pairs and both archive checksums.
 
 During standard-host IQ replay testing, tuning a 15 kHz AM filter to the edge of a 96 kHz capture crashed the host in WaterFall::calculateVFOSignalInfo. An isolated ASan reproducer compiled that exact upstream function without CW Notebook and reproduced a heap-buffer-overflow: its clamped upper FFT index can equal rawFFTSize, but the maximum-search loop includes that index. This is a host boundary bug; the plugin creates no visible waterfall VFO. No host binary or signature was modified. Keep Radio's whole filter within the captured spectrum on this tested older host. Controlled decoding checks use valid in-capture passbands.
+
+### Brown OMLSA crash reports, 2026-10-16
+
+Brown 1.2.1 crash reports from October 14 and October 16 both identify `noise_reduction_logmmse.dylib`, in `MY_B4_FFT::base4_fft` called through `LSA_denoise::Denoise_process`, on the `AFNR_OMLSA_MCRA` worker. The same noise-reducer binary UUID appears in both reports. The older report has no RTTY worker; the newer report has CW and RTTY workers waiting. This points to the OMLSA noise-reduction path, but does not establish the underlying memory error or exclude corruption elsewhere.
+
+The October 16 report records a crash about 15 minutes after process launch. It does not establish the separately reported failed startup. A subsequent normal-profile launch was running with CW Notebook 1.0.38 and no plugin-reported error during inspection. No reproduction or plugin-disabled comparison was performed; the running receiver and its settings were left unchanged. If this signature recurs, compare OMLSA disabled/enabled in an isolated profile before changing the decoder. Do not replace or re-sign the host as a diagnostic shortcut.
 
 ## Local 1.0.34 check, 2026-10-13
 

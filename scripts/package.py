@@ -25,7 +25,7 @@ folder = ROOT / "dist"
 folder.mkdir(exist_ok=True)
 archive = folder / f"{name}.zip"
 files = {"cw_notebook.dylib": args.binary, "cw_notebook.host.json": manifest}
-for path in ("scripts/install.py", "README.md", "LICENSE", "CREDITS.md", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md"):
+for path in ("scripts/install.py", "README.md", "LICENSE", "CREDITS.md", "THIRD_PARTY_NOTICES.md", "CHANGELOG.md", "docs/rtty.md"):
     files[path] = ROOT / path
 with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
     for relative, source in files.items():

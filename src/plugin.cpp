@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ReLLL and contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "plugin.h"
+#include "notebook_style.h"
 #include <core.h>
 #include <cstdlib>
 #include <cstdio>
@@ -52,6 +53,8 @@ CWNotebook::CWNotebook(std::string name):name_(std::move(name)),engine_(cw::host
 }
 CWNotebook::~CWNotebook(){
     accept_=false;
+    notebook::closePopups();
+    rtty_.reset();
 #if CW_HOST_BROWN
     gui::mainWindow.onWaterfallDrawn.unbindHandler(&drawHandler_);
 #else
@@ -62,9 +65,13 @@ CWNotebook::~CWNotebook(){
     sigpath::sinkManager.onStreamUnregister.unbindHandler(&unregistering_);
     detach();gui::menu.removeEntry(name_);
 }
-void CWNotebook::postInit(){if(enabled_){select(streamName_);metadata();}}
-void CWNotebook::enable(){enabled_=true;window_=true;presentWindow_=true;select(streamName_);metadata();}
-void CWNotebook::disable(){enabled_=false;accept_=false;detach();engine_.command("save");}
+void CWNotebook::postInit(){
+    rttySelection_=cw::host::rttySelection(name_);
+    if(enabled_){select(streamName_);metadata();}
+    if(cw::host::rttyEnabled(name_))setRttyMonitoring(true);
+}
+void CWNotebook::enable(){enabled_=true;window_=true;presentWindow_=true;select(streamName_);if(rtty_&&rttyEnabled_)rtty_->enabled(true);metadata();}
+void CWNotebook::disable(){enabled_=false;accept_=false;pendingModal_=4;if(rtty_)rtty_->enabled(false);detach();engine_.command("save");}
 void CWNotebook::detach(){
     if(!audioStream_)return;
     sink_.stop();sigpath::iqFrontEnd.removeVFO("cw_notebook_channel");audioStream_=nullptr;mixer_.reset();
@@ -86,11 +93,14 @@ void CWNotebook::metadata(){
     if(hasVfo)frequency+=offset;
     else frequency=double(gui::freqSelect.frequency);
     double center=gui::waterfall.getCenterFrequency(),rate=sigpath::iqFrontEnd.getSampleRate();
+    if(rtty_)rtty_->configure(rate,center,enabled_&&rttyEnabled_&&playing_);
     bool changed=lastFrequency_!=0&&(std::abs(frequency-lastFrequency_)>.5||center!=lastCenter_||rate!=lastRate_);
     if(changed){engine_.command("retune",std::to_string(frequency));watchdog_.grace(ImGui::GetTime());}
     lastFrequency_=frequency;lastCenter_=center;lastRate_=rate;frequency_=frequency;
     std::string mode=cw::host::mode(streamName_);
-    auto plan=cw::receiveChannel(mode,offset,hasVfo?sigpath::vfoManager.getBandwidth(streamName_):500,engine_.snapshot().amAudio);
+    const double width=hasVfo?sigpath::vfoManager.getBandwidth(streamName_):500;
+    if(rtty_)rtty_->focus(hasVfo?rtty::radioFocus(mode,frequency,width,center,rate):rtty::Focus{});
+    auto plan=cw::receiveChannel(mode,offset,width,engine_.snapshot().amAudio);
     supportedMode_=plan.supported;followsBandwidth_=plan.supported;
     bool modeChanged=mode!=mode_;
     bool layoutChanged=modeChanged||std::abs(plan.width-bandwidth_)>.1||plan.amAudio!=channel_.amAudio;
@@ -135,6 +145,28 @@ void CWNotebook::openPath(const std::string& path,bool reveal){
     }
 }
 std::string CWNotebook::handleDebugCommand(const std::string& cmd,const std::string& args){
+    if(cmd=="rtty_listen"){
+        try{
+            size_t end=0;double mark=args.size()<=64?std::stod(args,&end):0;
+            if(end!=args.size()||!std::isfinite(mark)||mark<=2125||mark>=1e12)return "{\"error\":\"Expected a positive mark frequency in Hz\"}";
+            pendingRttyListen_=mark;return "{\"status\":\"queued\"}";
+        }catch(const std::exception&){return "{\"error\":\"Expected a positive mark frequency in Hz\"}";}
+    }
+    if(cmd=="show_settings"||cmd=="show_help"||cmd=="show_signals"||cmd=="close_modal"){
+        pendingModal_=cmd=="show_settings"?1:cmd=="show_help"?2:cmd=="show_signals"?3:4;
+        return "{\"status\":\"queued\"}";
+    }
+    if(cmd=="rtty_enable"){
+        pendingRttyEnable_=args=="1"?1:0;return "{\"status\":\"queued\"}";
+    }
+    if(cmd=="rtty_close_all"){pendingRttyCloseAll_=true;return "{\"status\":\"queued\"}";}
+    if(cmd=="rtty_status"){
+        auto s=std::atomic_load(&rttyStatus_);
+        json stations=json::array(),signals=json::array();
+        for(const auto& v:s->signals)signals.push_back({{"center",v.center},{"shift",v.shift},{"available",v.available},{"decoding",v.decoding},{"confirmed",v.confirmed}});
+        for(const auto& v:s->stations)stations.push_back({{"id",v.id},{"frequency",v.frequency},{"center",v.center},{"baud",v.baud},{"shift",v.shift},{"reverse",v.reverse},{"active",v.active},{"text",v.text},{"last_text_at",v.lastTextAt}});
+        return json{{"enabled",rttyEnabledView_.load()},{"receiving",s->receiving},{"priority_low",s->focus.low},{"priority_high",s->focus.high},{"priority_decoders",s->focusedDecoders},{"rate",s->rate},{"center",s->center},{"decoders",s->decoders},{"candidates",s->candidates},{"limited",s->limited},{"dropped",s->dropped},{"processing_ms",s->processingMs},{"error",s->error},{"stations",stations},{"signals",signals}}.dump();
+    }
     if(cmd=="status"){
         auto s=engine_.snapshot();return json{{"text",s.text},{"recovered_text",s.recoveredText},
             {"timing_recovery",s.timingRecovery},{"auto_retune",s.autoRetune},{"reconnects",reconnects_},

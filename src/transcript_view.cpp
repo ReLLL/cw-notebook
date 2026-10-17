@@ -1,6 +1,8 @@
 // Copyright (c) 2026 ReLLL and contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "transcript_view.h"
+#include "notebook_style.h"
+#include "rtty_report.h"
 #include <imgui_internal.h>
 #include <algorithm>
 #include <ctime>
@@ -18,6 +20,9 @@ void TranscriptView::copied(const std::string& text,const char* kind){
     copiedAt_=ImGui::GetTime();
 }
 void TranscriptView::copyAll(const std::string& text){copied(text,"all text");}
+void TranscriptView::copyRTTYReport(const rtty::Station& station,const rtty::Status& capture,bool compact){
+    copied(rtty::receptionReport(station,capture,compact,std::time(nullptr)),"RTTY reception details and displayed text");
+}
 void TranscriptView::copyReport(double frequency,float wpm,float carrierOffset,bool manualSpeed,bool recovered,const std::string* currentText){
     const auto& text=currentText?*currentText:source_;
     const auto now=std::time(nullptr);
@@ -83,7 +88,7 @@ void TranscriptView::draw(const std::string& text,float height,float scale,bool&
         if(auto* state=ImGui::GetInputTextState(id))state->ClearSelection();
         resetSelection_=false;
     }
-    ImGui::PushStyleColor(ImGuiCol_FrameBg,ImVec4(.055f,.067f,.078f,1));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg,ImVec4(.045f,.050f,.054f,1));
     const bool macKeys=ImGui::GetIO().ConfigMacOSXBehaviors;
     ImGui::GetIO().ConfigMacOSXBehaviors=true;
     ImGui::InputTextMultiline("##decoded_morse",buffer_.data(),buffer_.size(),ImVec2(-1,height),
@@ -94,9 +99,12 @@ void TranscriptView::draw(const std::string& text,float height,float scale,bool&
     popupOpen_=ImGui::BeginPopupContextItem("copy_morse");
     if(popupOpen_){
         if(ImGui::MenuItem("Copy selection","Cmd+C",false,!selection_.empty()))copied(selection_,"selection");
+        notebook::hint("Copy only the selected displayed text to the clipboard.");
         if(ImGui::MenuItem("Copy all",nullptr,false,!text.empty()))copyAll(text);
+        notebook::hint("Copy the whole displayed version without reception metadata. Use Copy to clipboard for a reception report with metadata.");
         ImGui::Separator();
         if(ImGui::MenuItem("Follow live text"))follow=true;
+        notebook::hint("Scroll to the newest text. Reception has continued while you read earlier lines.");
         ImGui::EndPopup();
     }
     if(follow){

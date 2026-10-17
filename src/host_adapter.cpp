@@ -4,11 +4,16 @@
 #include <core.h>
 #include <cstdlib>
 #include <cctype>
-#if !CW_HOST_BROWN
 #include <radio_interface.h>
-#endif
+#include <gui/tuner.h>
+#include <gui/gui.h>
+#include <signal_path/signal_path.h>
 namespace cw::host {
 std::filesystem::path logFolder(){
+    // Explicit process-local override for isolated replay/diagnostic profiles.
+    if(const char* folder=std::getenv("CW_NOTEBOOK_LOG_DIR")){
+        std::filesystem::path path(folder);if(path.is_absolute())return path;
+    }
     const char* home=std::getenv("HOME");
     return std::filesystem::path(home?home:".")/"Documents"/name/"CW Logs";
 }
@@ -62,6 +67,58 @@ std::string grid(const std::string& instance){
     }
     core::configManager.release();
     return result;
+}
+bool rttyEnabled(const std::string& instance){
+    core::configManager.acquire();const auto& instances=core::configManager.conf["moduleInstances"];
+    bool enabled=true;
+    if(instances.contains(instance)&&instances[instance].is_object()&&instances[instance].contains("rttyEnabled")&&instances[instance]["rttyEnabled"].is_boolean())
+        enabled=instances[instance]["rttyEnabled"].get<bool>();
+    core::configManager.release();return enabled;
+}
+void setRttyEnabled(const std::string& instance,bool enabled){
+    core::configManager.acquire();core::configManager.conf["moduleInstances"][instance]["rttyEnabled"]=enabled;core::configManager.release(true);
+}
+rtty::Selection rttySelection(const std::string& instance){
+    rtty::Selection selection;
+    core::configManager.acquire();
+    const auto& instances=core::configManager.conf["moduleInstances"];
+    if(instances.contains(instance)&&instances[instance].contains("rttySelection")){
+        const auto& saved=instances[instance]["rttySelection"];
+        if(saved.is_object()){
+            if(saved.contains("onlyPinned")&&saved["onlyPinned"].is_boolean())selection.onlyPinned=saved["onlyPinned"].get<bool>();
+            auto load=[&](const char* key,auto& list,size_t limit){
+                if(!saved.contains(key)||!saved[key].is_array())return;
+                for(const auto& item:saved[key]){
+                    if(list.size()>=limit)break;
+                    if(item.is_array()&&item.size()==2&&item[0].is_number()&&item[1].is_number()){
+                        rtty::Target target{item[0].get<double>(),item[1].get<double>()};if(rtty::valid(target))list.push_back(target);
+                    }
+                }
+            };
+            load("pinned",selection.pinned,16);load("ignored",selection.ignored,64);
+        }
+    }
+    core::configManager.release();return rtty::validated(std::move(selection));
+}
+void setRttySelection(const std::string& instance,const rtty::Selection& selection){
+    json saved{{"onlyPinned",selection.onlyPinned},{"pinned",json::array()},{"ignored",json::array()}};
+    for(const auto& t:selection.pinned)saved["pinned"].push_back({t.center,t.shift});
+    for(const auto& t:selection.ignored)saved["ignored"].push_back({t.center,t.shift});
+    core::configManager.acquire();core::configManager.conf["moduleInstances"][instance]["rttySelection"]=std::move(saved);core::configManager.release(true);
+}
+bool listenRTTY(const std::string& receiver,double mark){
+    const double dial=mark-2125,center=gui::waterfall.getCenterFrequency(),rate=sigpath::iqFrontEnd.getSampleRate();
+    if(!std::isfinite(mark)||dial<center-rate/2+100||dial+3200>center+rate/2-100||!sigpath::vfoManager.vfoExists(receiver))return false;
+    if(!core::modComManager.interfaceExists(receiver)||core::modComManager.getModuleName(receiver)!="radio")return false;
+#if CW_HOST_BROWN
+    auto instance=core::moduleManager.instances.find(receiver);
+    if(instance==core::moduleManager.instances.end()||!instance->second.instance)return false;
+    instance->second.instance->handleDebugCommand("set_demod","USB");
+#else
+    int usb=RADIO_IFACE_MODE_USB;core::modComManager.callInterface(receiver,RADIO_IFACE_CMD_SET_MODE,&usb,nullptr);
+#endif
+    float width=3200;core::modComManager.callInterface(receiver,RADIO_IFACE_CMD_SET_BANDWIDTH,&width,nullptr);
+    tuner::tune(tuner::TUNER_MODE_NORMAL,receiver,dial);return true;
 }
 bool setGrid(std::string value,const std::string& instance){
     if(brown)return false; // Brown owns its native location setting.

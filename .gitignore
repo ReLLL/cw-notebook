@@ -1,3 +1,7 @@
+# Local project instructions (keep on disk, exclude from Git)
+AGENTS.md
+
+# Build output and release packages
 build*/
 .DS_Store
 *.dSYM/
@@ -13,6 +17,7 @@ __pycache__/
 /.vscode/
 /CMakeFiles/
 /CMakeCache.txt
+/CMakeUserPresets.json
 /cmake_install.cmake
 /CTestTestfile.cmake
 /Testing/
@@ -20,6 +25,8 @@ __pycache__/
 *.a
 *.dylib
 *.zip
+
+# Receiver data, captures and local configuration
 *.log
 *.f32
 *.iq
@@ -32,3 +39,8 @@ __pycache__/
 .decoder-settings
 *.pem
 *.key
+
+# Editor temporary files
+*.swp
+*.swo
+*~
